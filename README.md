@@ -37,9 +37,12 @@ GitHub 저장소의 `Settings > Secrets and variables > Actions > Repository sec
 
 - `TELEGRAM_BOT_TOKEN`: 텔레그램 봇 토큰
 - `TELEGRAM_CHAT_ID`: 텔레그램 chat id
+- `OUTOFSTOCK_FILE_ID`: 매일 갱신되는 품절 PDF의 Google Drive 파일 ID
 - `SALES_LIST_FILE_ID`: Google Drive에 올린 `sales-list.xlsx`의 파일 ID
 
 `sales-list.xlsx` 파일은 Google Drive에서 "링크가 있는 모든 사용자 보기 가능"으로 설정해야 GitHub Actions가 다운로드할 수 있습니다.
+
+다른 사람이 Codex에서 같은 봇을 세팅하게 하려면 [CODEX_QUICKSTART.md](CODEX_QUICKSTART.md)를 공유하세요.
 
 수동 테스트는 GitHub 저장소의 `Actions > Out-of-stock alert > Run workflow`에서 실행할 수 있습니다.
 

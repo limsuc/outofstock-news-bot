@@ -9,7 +9,6 @@ import sys
 import unicodedata
 import urllib.parse
 import urllib.request
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -25,9 +24,6 @@ SALES_DOWNLOAD_PATH = DATA_DIR / "sales-list.xlsx"
 DB_PATH = DATA_DIR / "alerts.sqlite3"
 SALES_PATH = ROOT / "sales-list.xlsx"
 DRIVE_FILE_ID = "15dOI-2gYbOLEett8Jfu4OWilAytZdM26"
-DRIVE_DOWNLOAD_URL = (
-    f"https://drive.google.com/uc?export=download&id={DRIVE_FILE_ID}"
-)
 
 
 @dataclass(frozen=True)
@@ -98,7 +94,16 @@ def download_url(url: str, output_path: Path) -> Path:
     return output_path
 
 
-def download_drive_pdf(url: str = DRIVE_DOWNLOAD_URL, output_path: Path = DOWNLOAD_PATH) -> Path:
+def resolve_outofstock_url(env: dict[str, str]) -> str:
+    outofstock_url = env.get("OUTOFSTOCK_URL", "").strip()
+    if outofstock_url:
+        return outofstock_url
+
+    outofstock_file_id = env.get("OUTOFSTOCK_FILE_ID", "").strip() or DRIVE_FILE_ID
+    return google_drive_download_url(outofstock_file_id)
+
+
+def download_drive_pdf(url: str, output_path: Path = DOWNLOAD_PATH) -> Path:
     output_path = download_url(url, output_path)
     data = output_path.read_bytes()
     if not data.startswith(b"%PDF"):
@@ -447,7 +452,8 @@ def main() -> int:
 
     sales_path = resolve_sales_path(env)
 
-    pdf_path = DOWNLOAD_PATH if args.use_existing_pdf else download_drive_pdf()
+    pdf_url = resolve_outofstock_url(env)
+    pdf_path = DOWNLOAD_PATH if args.use_existing_pdf else download_drive_pdf(pdf_url)
     all_pdf_lines = extract_pdf_lines(pdf_path)
     pdf_lines = stockout_candidate_lines(pdf_path)
     sales_items = load_sales_items(sales_path)
