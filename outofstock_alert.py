@@ -17,6 +17,11 @@ from openpyxl import load_workbook
 from pypdf import PdfReader
 
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 DOWNLOAD_PATH = DATA_DIR / "outofstock-latest.pdf"
@@ -362,30 +367,55 @@ def mark_no_match_sent(conn: sqlite3.Connection) -> None:
 
 def format_summary(matches: list[Match], limit: int = 20) -> str:
     today = datetime.now().strftime("%Y-%m-%d")
+    divider = "━━━━━━━━━━━━━━"
     if not matches:
-        return f"[품절 알림]\n확인일: {today}\n현재 거래처 품목과 매칭된 품절 품목이 없습니다."
+        return "\n".join(
+            [
+                f"✅ [{today} / 품절 알림]",
+                "",
+                "매칭 품목: 총 0개",
+                "",
+                divider,
+                "현재 거래처 품목과 매칭된 품절 품목이 없습니다.",
+                divider,
+            ]
+        )
 
     lines = [
-        "[품절 알림]",
-        f"확인일: {today}",
-        f"매칭 품목: {len(matches)}개",
+        f"🚨 [{today} / 품절 알림]",
         "",
+        f"매칭 품목: 총 {len(matches)}개",
+        "",
+        divider,
     ]
+
+    circled_numbers = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
     for idx, match in enumerate(matches[:limit], start=1):
+        number = circled_numbers[idx - 1] if idx <= len(circled_numbers) else f"{idx}."
         clients = ", ".join(match.clients[:5])
         if len(match.clients) > 5:
             clients += f" 외 {len(match.clients) - 5}곳"
         lines.extend(
             [
-                f"{idx}. {match.product}",
-                f"   거래처: {clients}",
-                f"   PDF 항목: {match.matched_line}",
-                f"   매칭: {match.match_type}",
+                f"{number} {match.product}",
+                f"- 거래처: {clients}",
+                f"- 품목명: {match.matched_line}",
+                f"- 매칭 기준: {match.match_type}",
+                "",
             ]
         )
 
     if len(matches) > limit:
         lines.append(f"외 {len(matches) - limit}개 품목이 더 있습니다.")
+        lines.append("")
+
+    lines.extend(
+        [
+            divider,
+            "",
+            "거래처별 재고 및 대체 가능 여부 확인 필요",
+        ]
+    )
     return "\n".join(lines)
 
 
