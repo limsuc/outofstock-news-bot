@@ -40,11 +40,18 @@ class SalesItem:
 
 
 @dataclass(frozen=True)
+class StockoutItem:
+    product: str
+    expected_date: str
+
+
+@dataclass(frozen=True)
 class Match:
     product: str
     clients: tuple[str, ...]
     maker: str
     matched_line: str
+    expected_date: str
     match_type: str
 
 
@@ -179,25 +186,50 @@ PROMOTION_STOP_RE = re.compile(
 )
 
 
-def stockout_candidate_lines(pdf_path: Path) -> list[str]:
+def stockout_candidate_lines(pdf_path: Path) -> list[StockoutItem]:
     reader = PdfReader(str(pdf_path))
-    candidates: list[str] = []
+    candidates: list[StockoutItem] = []
     for page in reader.pages:
-        page_started = False
-        for raw_line in (page.extract_text() or "").splitlines():
-            line = " ".join(raw_line.strip().split())
-            if not line:
+        fragments: list[tuple[float, float, str]] = []
+
+        def visitor(text: str, cm: object, tm: object, font_dict: object, font_size: object) -> None:
+            clean = " ".join(text.strip().split())
+            if clean:
+                fragments.append((float(tm[5]), float(tm[4]), clean))
+
+        page.extract_text(visitor_text=visitor)
+
+        rows: list[list[tuple[float, float, str]]] = []
+        for y, x, text in sorted(fragments, key=lambda item: (-item[0], item[1])):
+            if y <= 0:
                 continue
-            if "제약사명" in line and "제품명" in line:
+            if not rows or abs(rows[-1][0][0] - y) > 3:
+                rows.append([(y, x, text)])
+            else:
+                rows[-1].append((y, x, text))
+
+        page_started = False
+        for row in rows:
+            texts = [text for _, _, text in row]
+            combined = " ".join(texts)
+            if "제약사명" in combined and ("제품명" in combined or "출하 예정일" in combined):
                 page_started = True
                 continue
             if not page_started:
                 continue
-            if PROMOTION_STOP_RE.search(line):
-                break
-            if line in {"출하 예정일", "내용"}:
+
+            product_parts = [text for _, x, text in row if 65 <= x < 335]
+            expected_parts = [text for _, x, text in row if x >= 335]
+            product = " ".join(product_parts).strip()
+            expected_date = " ".join(expected_parts).strip()
+
+            if not product:
                 continue
-            candidates.append(line)
+            if PROMOTION_STOP_RE.search(" ".join([product, expected_date])):
+                break
+            if product in {"출하 예정일", "내용", "제품명"}:
+                continue
+            candidates.append(StockoutItem(product=product, expected_date=expected_date or "-"))
     return candidates
 
 
@@ -229,7 +261,7 @@ def load_sales_items(path: Path = SALES_PATH) -> list[SalesItem]:
     return items
 
 
-def find_matches(sales_items: list[SalesItem], pdf_lines: list[str]) -> list[Match]:
+def find_matches(sales_items: list[SalesItem], stockout_items: list[StockoutItem]) -> list[Match]:
     by_product: dict[str, dict[str, object]] = {}
     for item in sales_items:
         entry = by_product.setdefault(
@@ -240,8 +272,9 @@ def find_matches(sales_items: list[SalesItem], pdf_lines: list[str]) -> list[Mat
         assert isinstance(clients, set)
         clients.add(item.client)
 
-    line_index = [
-        (line, normalized_text(line), product_stem(line)) for line in pdf_lines
+    stockout_index = [
+        (item, normalized_text(item.product), product_stem(item.product))
+        for item in stockout_items
     ]
 
     matches: list[Match] = []
@@ -253,17 +286,20 @@ def find_matches(sales_items: list[SalesItem], pdf_lines: list[str]) -> list[Mat
 
         found_line = ""
         match_type = ""
-        for line, line_full, line_stem in line_index:
+        matched_stockout: StockoutItem | None = None
+        for stockout_item, line_full, line_stem in stockout_index:
             if full and len(full) >= 4 and full in line_full:
-                found_line = line
+                found_line = stockout_item.product
+                matched_stockout = stockout_item
                 match_type = "정확/포함"
                 break
             if stem and len(stem) >= 4 and stem in line_stem:
-                found_line = line
+                found_line = stockout_item.product
+                matched_stockout = stockout_item
                 match_type = "제품명 기준"
                 break
 
-        if not found_line:
+        if not found_line or not matched_stockout:
             continue
 
         clients = entry["clients"]
@@ -274,6 +310,7 @@ def find_matches(sales_items: list[SalesItem], pdf_lines: list[str]) -> list[Mat
                 clients=tuple(sorted(str(client) for client in clients)),
                 maker=str(entry["maker"] or ""),
                 matched_line=found_line,
+                expected_date=matched_stockout.expected_date,
                 match_type=match_type,
             )
         )
@@ -299,7 +336,9 @@ def connect_db(path: Path = DB_PATH) -> sqlite3.Connection:
 
 
 def alert_hash(match: Match) -> str:
-    payload = "|".join([match.product, ",".join(match.clients), match.matched_line])
+    payload = "|".join(
+        [match.product, ",".join(match.clients), match.matched_line, match.expected_date]
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -400,6 +439,7 @@ def format_summary(matches: list[Match], limit: int = 20) -> str:
                 f"{number} {match.product}",
                 f"- 거래처: {clients}",
                 f"- 품목명: {match.matched_line}",
+                f"- 출하예정일: {match.expected_date}",
                 f"- 매칭 기준: {match.match_type}",
                 "",
             ]
