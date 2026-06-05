@@ -2,8 +2,8 @@ name: Out-of-stock alert
 
 on:
   schedule:
-    # 17:00 KST = 08:00 UTC
-    - cron: "0 8 * * *"
+    # 17:13 KST = 08:13 UTC. Avoid the top-of-hour Actions queue.
+    - cron: "13 8 * * *"
   workflow_dispatch:
 
 jobs:
@@ -39,6 +39,25 @@ jobs:
 
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
+
+      - name: Validate required settings
+        run: |
+          missing=0
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+            echo "Missing TELEGRAM_BOT_TOKEN"
+            missing=1
+          fi
+          if [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Missing TELEGRAM_CHAT_ID"
+            missing=1
+          fi
+          if [ -z "$SALES_LIST_FILE_ID" ] && [ -z "$SALES_LIST_URL" ]; then
+            echo "Missing SALES_LIST_FILE_ID or SALES_LIST_URL"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Send Telegram alert
         run: python outofstock_alert.py --send

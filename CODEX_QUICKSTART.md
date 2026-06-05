@@ -84,7 +84,7 @@ SALES_LIST_FILE_ID=sales-list.xlsx Google Drive 파일 ID
 
 해줘야 할 일:
 1. outofstock_alert.py 문법 검사를 해줘.
-2. GitHub Actions workflow가 매일 17:00 KST에 실행되도록 되어 있는지 확인해줘.
+2. GitHub Actions workflow가 매일 17:13 KST에 실행되도록 되어 있는지 확인해줘.
 3. Actions에서 수동 실행할 수 있게 되어 있는지 확인해줘.
 4. 가능하면 workflow를 실행하거나, 내가 실행할 수 있는 정확한 위치를 알려줘.
 5. 문제가 있으면 고쳐서 커밋/푸시해줘.
@@ -105,13 +105,13 @@ Actions > Out-of-stock alert > Run workflow
 
 ## 7. 실행 시간 바꾸기
 
-기본 실행 시간은 매일 17:00 KST입니다.
+기본 실행 시간은 매일 17:13 KST입니다.
 
 `.github/workflows/outofstock-alert.yml`의 cron 값을 바꾸면 됩니다.
 
 ```yaml
-# 17:00 KST = 08:00 UTC
-- cron: "0 8 * * *"
+# 17:13 KST = 08:13 UTC
+- cron: "13 8 * * *"
 ```
 
 예를 들어 매일 09:00 KST는 00:00 UTC입니다.

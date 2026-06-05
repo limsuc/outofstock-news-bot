@@ -31,7 +31,7 @@ python outofstock_alert.py --send
 
 ## GitHub Actions 실행
 
-`.github/workflows/outofstock-alert.yml`은 매일 17:00 KST에 실행됩니다.
+`.github/workflows/outofstock-alert.yml`은 매일 17:13 KST에 실행됩니다.
 
 GitHub 저장소의 `Settings > Secrets and variables > Actions > Repository secrets`에 아래 값을 추가하세요.
 
