@@ -1,0 +1,42 @@
+name: Out-of-stock alert
+
+on:
+  schedule:
+    # 17:00 KST = 08:00 UTC
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  send-alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      SALES_LIST_FILE_ID: ${{ secrets.SALES_LIST_FILE_ID }}
+      SALES_LIST_URL: ${{ secrets.SALES_LIST_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Restore alert history
+        uses: actions/cache@v4
+        with:
+          path: data/alerts.sqlite3
+          key: outofstock-alert-db-${{ github.run_id }}
+          restore-keys: |
+            outofstock-alert-db-
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Send Telegram alert
+        run: python outofstock_alert.py --send

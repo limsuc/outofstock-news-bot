@@ -1,0 +1,6 @@
+.env
+data/
+outofstock-list-download-test
+sales-list.xlsx
+__pycache__/
+*.pyc
