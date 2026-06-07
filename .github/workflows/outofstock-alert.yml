@@ -13,10 +13,10 @@ jobs:
 
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID || '569967356' }}
       OUTOFSTOCK_FILE_ID: ${{ secrets.OUTOFSTOCK_FILE_ID || vars.OUTOFSTOCK_FILE_ID }}
       OUTOFSTOCK_URL: ${{ secrets.OUTOFSTOCK_URL || vars.OUTOFSTOCK_URL }}
-      SALES_LIST_FILE_ID: ${{ secrets.SALES_LIST_FILE_ID || vars.SALES_LIST_FILE_ID }}
+      SALES_LIST_FILE_ID: ${{ secrets.SALES_LIST_FILE_ID || vars.SALES_LIST_FILE_ID || '1ZZOH5A3AzDcHEyzoOx43KwSVxeLk5XXE' }}
       SALES_LIST_URL: ${{ secrets.SALES_LIST_URL || vars.SALES_LIST_URL }}
 
     steps:

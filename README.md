@@ -36,9 +36,9 @@ python outofstock_alert.py --send
 GitHub 저장소의 `Settings > Secrets and variables > Actions`에 아래 값을 추가하세요.
 
 - Repository secrets: `TELEGRAM_BOT_TOKEN` 텔레그램 봇 토큰
-- Repository secrets 또는 Repository variables: `TELEGRAM_CHAT_ID` 텔레그램 chat id
+- Repository secrets 또는 Repository variables: `TELEGRAM_CHAT_ID` 텔레그램 chat id. 현재 운영 기본값은 `569967356`입니다.
 - Repository secrets 또는 Repository variables: `OUTOFSTOCK_FILE_ID` 매일 갱신되는 품절 PDF의 Google Drive 파일 ID
-- Repository secrets 또는 Repository variables: `SALES_LIST_FILE_ID` Google Drive에 올린 `sales-list.xlsx`의 파일 ID
+- Repository secrets 또는 Repository variables: `SALES_LIST_FILE_ID` Google Drive에 올린 `sales-list.xlsx`의 파일 ID. 현재 운영 기본값은 `1ZZOH5A3AzDcHEyzoOx43KwSVxeLk5XXE`입니다.
 
 `sales-list.xlsx` 파일은 Google Drive에서 "링크가 있는 모든 사용자 보기 가능"으로 설정해야 GitHub Actions가 다운로드할 수 있습니다.
 
