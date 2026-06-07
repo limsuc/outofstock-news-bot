@@ -44,15 +44,15 @@ jobs:
         run: |
           missing=0
           if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-            echo "Missing TELEGRAM_BOT_TOKEN"
+            echo "Missing Telegram bot token secret"
             missing=1
           fi
           if [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "Missing TELEGRAM_CHAT_ID"
+            echo "Missing Telegram chat id secret"
             missing=1
           fi
           if [ -z "$SALES_LIST_FILE_ID" ] && [ -z "$SALES_LIST_URL" ]; then
-            echo "Missing SALES_LIST_FILE_ID or SALES_LIST_URL"
+            echo "Missing sales list file id or sales list URL secret"
             missing=1
           fi
           if [ "$missing" -ne 0 ]; then
