@@ -2,8 +2,9 @@ name: Out-of-stock alert
 
 on:
   schedule:
-    # 17:13 KST = 08:13 UTC. Avoid the top-of-hour Actions queue.
-    - cron: "13 8 * * *"
+    # 17:13/17:33/17:53 KST = 08:13/08:33/08:53 UTC.
+    # Multiple checks reduce the chance of a missed scheduled run.
+    - cron: "13,33,53 8 * * *"
   workflow_dispatch:
 
 jobs:
