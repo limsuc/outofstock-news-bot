@@ -6,6 +6,12 @@ on:
     # Multiple checks reduce the chance of a missed scheduled run.
     - cron: "13,33,53 8 * * *"
   workflow_dispatch:
+    inputs:
+      force_send:
+        description: "Send even if the current alert was already sent"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   send-alert:
@@ -61,4 +67,9 @@ jobs:
           fi
 
       - name: Send Telegram alert
-        run: python outofstock_alert.py --send
+        run: |
+          if [ "${{ github.event.inputs.force_send }}" = "true" ]; then
+            python outofstock_alert.py --send --force-send
+          else
+            python outofstock_alert.py --send
+          fi

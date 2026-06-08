@@ -495,6 +495,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--send-test", action="store_true", help="텔레그램 테스트 메시지만 발송")
     parser.add_argument("--send", action="store_true", help="매칭된 신규 품절 알림 발송")
     parser.add_argument(
+        "--force-send",
+        action="store_true",
+        help="이미 발송된 결과라도 현재 매칭 결과를 다시 발송",
+    )
+    parser.add_argument(
         "--use-existing-pdf",
         action="store_true",
         help="Drive 다운로드 대신 data/outofstock-latest.pdf 사용",
@@ -550,22 +555,28 @@ def main() -> int:
     with connect_db() as conn:
         if not matches:
             no_match_hash = no_match_alert_hash()
-            if has_sent_hash(conn, no_match_hash):
+            if not args.force_send and has_sent_hash(conn, no_match_hash):
                 print("no_match_alert_already_sent_today=true")
                 return 0
             send_telegram_message(token, chat_id, format_summary(matches))
             mark_no_match_sent(conn)
-            print("no_match_alert_sent=true")
+            if args.force_send:
+                print("force_no_match_alert_sent=true")
+            else:
+                print("no_match_alert_sent=true")
             return 0
 
-        new_matches = unsent_matches(matches, conn)
+        new_matches = matches if args.force_send else unsent_matches(matches, conn)
         if not new_matches:
             print("new_matches=0")
             return 0
         for message in split_message(format_summary(new_matches)):
             send_telegram_message(token, chat_id, message)
         mark_sent(new_matches, conn)
-        print(f"sent_matches={len(new_matches)}")
+        if args.force_send:
+            print(f"force_sent_matches={len(new_matches)}")
+        else:
+            print(f"sent_matches={len(new_matches)}")
 
     return 0
 
