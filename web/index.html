@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>품절 매칭 리포트</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs" type="module"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">품</span>
+          <div>
+            <strong>품절 매칭 리포트</strong>
+            <small>사업자별 복사용 알림 생성</small>
+          </div>
+        </div>
+        <nav>
+          <button class="nav-button active" data-view="dashboard">대시보드</button>
+          <button class="nav-button" data-view="master">거래처 마스터</button>
+          <button class="nav-button" data-view="settlement">정산현황 품목</button>
+          <button class="nav-button" data-view="stockout">품절 리스트</button>
+          <button class="nav-button" data-view="reports">사업자별 리포트</button>
+          <button class="nav-button" data-view="history">이력/백업</button>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <h1>사업자별 품절 리포트 생성</h1>
+            <p>정산현황 품목과 품절 PDF를 대조해 사업자별 복사용 메시지를 만듭니다.</p>
+          </div>
+          <div class="top-actions">
+            <button id="saveButton" class="secondary-button">저장</button>
+            <button id="resetDemoButton" class="ghost-button">화면 새로고침</button>
+          </div>
+        </header>
+
+        <section id="dashboard" class="view active">
+          <div class="stats-grid">
+            <div class="metric"><span>사업자</span><strong id="statPartners">0</strong></div>
+            <div class="metric"><span>연결 병의원</span><strong id="statMappings">0</strong></div>
+            <div class="metric"><span>처방 품목</span><strong id="statItems">0</strong></div>
+            <div class="metric"><span>품절 품목</span><strong id="statStockouts">0</strong></div>
+            <div class="metric warning"><span>미연결 병의원</span><strong id="statUnmapped">0</strong></div>
+            <div class="metric good"><span>오늘 리포트</span><strong id="statReports">0</strong></div>
+          </div>
+
+          <div class="workflow">
+            <div><b>1</b><span>사업자와 병의원 연결</span></div>
+            <div><b>2</b><span>월 1회 정산현황 업로드</span></div>
+            <div><b>3</b><span>매일 품절 PDF 업로드</span></div>
+            <div><b>4</b><span>사업자별 리포트 복사/전송</span></div>
+          </div>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>오늘 빠른 작업</h2>
+              <span id="todayBadge" class="badge"></span>
+            </div>
+            <div class="quick-grid">
+              <button class="quick-card" data-view-jump="master">거래처 추가</button>
+              <button class="quick-card" data-view-jump="settlement">정산현황 업로드</button>
+              <button class="quick-card" data-view-jump="stockout">품절 PDF 업로드</button>
+              <button class="quick-card primary" id="quickGenerateButton">리포트 생성</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>미연결 병의원</h2>
+              <span class="badge muted-badge">정산현황 기준</span>
+            </div>
+            <div id="unmappedChips" class="chip-list empty-state">정산현황을 업로드하면 표시됩니다.</div>
+          </section>
+        </section>
+
+        <section id="master" class="view">
+          <div class="two-column">
+            <section class="panel">
+              <h2>사업자 저장</h2>
+              <form id="partnerForm" class="stack-form">
+                <label>사업자명<input name="name" required placeholder="예: 에스팜" /></label>
+                <label>연락처<input name="phone" placeholder="010-0000-0000" /></label>
+                <label>담당자명<input name="contact" placeholder="예: 김대표" /></label>
+                <label>메모<input name="memo" placeholder="특이사항" /></label>
+                <button class="primary-button" type="submit">사업자 저장</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <h2>병의원 연결</h2>
+              <form id="mappingForm" class="stack-form">
+                <label>병의원명<input id="hospitalInput" name="hospitalName" required placeholder="정산현황 병의원명과 동일하게" /></label>
+                <label>사업자<select id="partnerSelect" name="partnerId" required></select></label>
+                <label>메모<input name="memo" placeholder="연결 메모" /></label>
+                <button class="primary-button" type="submit">병의원 연결 저장</button>
+              </form>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>거래처 마스터</h2>
+              <input id="masterSearch" class="search-input" placeholder="사업자, 연락처, 병의원 검색" />
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>병의원명</th>
+                    <th>사업자</th>
+                    <th>연락처</th>
+                    <th>담당자</th>
+                    <th>메모</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="mappingTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="settlement" class="view">
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>정산현황 업로드</h2>
+              <span id="settlementMonthBadge" class="badge">업로드 전</span>
+            </div>
+            <p class="muted">월 1회 업로드합니다. HTML 형식의 `.xls`와 일반 `.xlsx`를 지원합니다.</p>
+            <form id="settlementForm" class="upload-box">
+              <input id="settlementFile" type="file" accept=".xls,.xlsx" />
+              <button class="primary-button" type="submit">품목 갱신</button>
+            </form>
+            <div id="settlementResult" class="result-box hidden"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>저장된 처방 품목</h2>
+              <input id="itemSearch" class="search-input" placeholder="병의원, 제품, 제약사, 사업자 검색" />
+            </div>
+            <div class="table-wrap tall">
+              <table>
+                <thead>
+                  <tr>
+                    <th>정산월</th>
+                    <th>병의원</th>
+                    <th>제품명</th>
+                    <th>제약사</th>
+                    <th>사업자</th>
+                  </tr>
+                </thead>
+                <tbody id="itemTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="stockout" class="view">
+          <div class="two-column">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>품절 PDF 업로드</h2>
+                <span class="badge muted-badge">매일 작업</span>
+              </div>
+              <p class="muted">품절 PDF에서 품목명과 출하예정일을 추출합니다. PDF 형태가 바뀌면 수동 입력을 함께 사용하세요.</p>
+              <form id="stockoutPdfForm" class="upload-box">
+                <input id="stockoutPdfFile" type="file" accept=".pdf" />
+                <button class="primary-button" type="submit">PDF 추출</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <h2>수동 입력</h2>
+              <p class="muted">한 줄에 `품목명 | 출하예정일` 형식으로 붙여넣을 수 있습니다.</p>
+              <textarea id="manualStockoutText" rows="8" placeholder="브로나제장용정 | 6월 8일&#10;페북트정40mg | 6월 5일"></textarea>
+              <button id="manualStockoutButton" class="primary-button full">수동 품절 목록 반영</button>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>오늘 품절 품목</h2>
+              <button id="clearStockoutButton" class="ghost-button">품절 목록 비우기</button>
+            </div>
+            <div class="table-wrap tall">
+              <table>
+                <thead>
+                  <tr>
+                    <th>품목명</th>
+                    <th>출하예정일</th>
+                  </tr>
+                </thead>
+                <tbody id="stockoutTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="reports" class="view">
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>사업자별 리포트 생성</h2>
+              <div class="inline-actions">
+                <input id="reportDate" type="date" />
+                <button id="generateReportsButton" class="primary-button">매칭 실행</button>
+              </div>
+            </div>
+            <p class="muted">정산현황 품목과 품절 목록을 대조해 사업자별 복사용 메시지를 만듭니다.</p>
+          </section>
+          <div id="reportGrid" class="report-grid"></div>
+        </section>
+
+        <section id="history" class="view">
+          <div class="two-column">
+            <section class="panel">
+              <h2>데이터 백업</h2>
+              <p class="muted">이 버전은 브라우저에 데이터를 저장합니다. 다른 PC로 옮기려면 백업 파일을 내려받아 가져오면 됩니다.</p>
+              <div class="inline-actions left">
+                <button id="exportButton" class="secondary-button">백업 다운로드</button>
+                <label class="file-button">백업 가져오기<input id="importFile" type="file" accept=".json" /></label>
+              </div>
+            </section>
+
+            <section class="panel">
+              <h2>리포트 이력</h2>
+              <p class="muted">발송완료 체크와 생성 메시지가 저장됩니다.</p>
+              <button id="clearReportsButton" class="ghost-button">이력 비우기</button>
+            </section>
+          </div>
+          <div id="historyList" class="history-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="reportCardTemplate">
+      <article class="report-card">
+        <div class="report-card-head">
+          <div>
+            <h3></h3>
+            <p></p>
+          </div>
+          <span class="report-count"></span>
+        </div>
+        <pre></pre>
+        <div class="report-actions">
+          <button class="copy-button secondary-button">복사</button>
+          <button class="print-button secondary-button">PDF 출력</button>
+          <button class="done-button primary-button">발송완료</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -2,5 +2,6 @@
 data/
 outofstock-list-download-test
 sales-list.xlsx
+settlement-sample.xls
 __pycache__/
 *.pyc
