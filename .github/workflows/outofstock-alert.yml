@@ -2,9 +2,9 @@ name: Out-of-stock alert
 
 on:
   schedule:
-    # 17:13/17:33 KST = 08:13/08:33 UTC.
-    # Multiple checks reduce the chance of a missed scheduled run.
-    - cron: "13,33,53 8 * * *"
+    # 17:03-17:43 KST = 08:03-08:43 UTC.
+    # Frequent checks keep delivery close to 17:00 even if GitHub drops a slot.
+    - cron: "3,8,13,18,23,28,33,38,43 8 * * *"
   workflow_dispatch:
     inputs:
       force_send:
