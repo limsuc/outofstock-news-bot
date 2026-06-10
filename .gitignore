@@ -5,3 +5,5 @@ sales-list.xlsx
 settlement-sample.xls
 __pycache__/
 *.pyc
+
+.vercel
