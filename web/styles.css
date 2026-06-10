@@ -27,7 +27,6 @@ body {
 
 button,
 input,
-select,
 textarea {
   font: inherit;
 }
@@ -233,7 +232,7 @@ p {
 }
 
 .quick-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .panel {
@@ -258,7 +257,8 @@ p {
 .secondary-button,
 .ghost-button,
 .quick-card,
-.file-button {
+.file-button,
+.link-button {
   border: 0;
   border-radius: 6px;
   padding: 10px 13px;
@@ -288,6 +288,13 @@ p {
   color: var(--danger);
 }
 
+.link-button {
+  background: transparent;
+  color: var(--primary-dark);
+  padding-left: 0;
+  margin-top: 8px;
+}
+
 .quick-card {
   min-height: 58px;
   text-align: left;
@@ -301,7 +308,6 @@ p {
 }
 
 input,
-select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -317,21 +323,13 @@ textarea {
 }
 
 input:focus,
-select:focus,
 textarea:focus {
   border-color: var(--primary);
   outline: 2px solid rgba(23, 107, 135, 0.13);
 }
 
-.stack-form {
-  display: grid;
-  gap: 12px;
-}
-
-label {
-  display: grid;
-  gap: 6px;
-  color: var(--muted);
+.search-input {
+  max-width: 360px;
 }
 
 .file-button {
@@ -346,10 +344,6 @@ label {
   cursor: pointer;
 }
 
-.search-input {
-  max-width: 360px;
-}
-
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--line);
@@ -357,7 +351,7 @@ label {
 }
 
 .table-wrap.tall {
-  max-height: 580px;
+  max-height: 620px;
 }
 
 table {
@@ -380,28 +374,6 @@ th {
   background: #f3f6f8;
   color: #334252;
   font-size: 13px;
-}
-
-.chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.chip {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: #fbfcfd;
-  padding: 8px 10px;
-}
-
-.chip:hover {
-  border-color: var(--primary);
-  color: var(--primary-dark);
-}
-
-.empty-state {
-  color: var(--muted);
 }
 
 .result-box {
@@ -427,7 +399,11 @@ th {
   gap: 14px;
 }
 
-.report-card {
+.report-card,
+.history-item {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   padding: 18px;
 }
 
@@ -459,18 +435,11 @@ th {
   gap: 8px;
 }
 
-.history-item {
-  background: #ffffff;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 16px;
+.empty-state {
+  color: var(--muted);
 }
 
 @media print {
-  body {
-    background: #ffffff;
-  }
-
   .sidebar,
   .topbar,
   .report-actions {
@@ -484,12 +453,6 @@ th {
   .content {
     padding: 0;
   }
-
-  .panel,
-  .report-card {
-    box-shadow: none;
-    border: 0;
-  }
 }
 
 @media (max-width: 1050px) {
@@ -502,10 +465,6 @@ th {
   .quick-grid,
   .two-column {
     grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    position: static;
   }
 
   nav {

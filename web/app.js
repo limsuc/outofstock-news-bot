@@ -1,4 +1,4 @@
-const STORAGE_KEY = "outofstock-report-manager-v1";
+const STORAGE_KEY = "outofstock-master-match-v2";
 const divider = "━━━━━━━━━━━━━━";
 
 let store = loadStore();
@@ -9,12 +9,10 @@ const id = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 function loadStore() {
   const fallback = {
-    partners: [],
-    mappings: [],
-    prescriptionItems: [],
+    masterItems: [],
     stockoutItems: [],
-    reports: [],
-    settlementMonth: "",
+    results: [],
+    history: [],
   };
   try {
     return { ...fallback, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") };
@@ -27,6 +25,10 @@ function saveStore() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
 }
 
+function clean(value) {
+  return String(value ?? "").replace(/\u00a0/g, " ").trim().replace(/\s+/g, " ");
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -34,10 +36,6 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}
-
-function clean(value) {
-  return String(value ?? "").replace(/\u00a0/g, " ").trim().replace(/\s+/g, " ");
 }
 
 function normalizeProduct(value) {
@@ -55,17 +53,8 @@ function productStem(value) {
     .replace(/[^A-Z가-힣]/g, "");
 }
 
-function getPartner(partnerId) {
-  return store.partners.find((partner) => partner.id === partnerId);
-}
-
-function getMapping(hospitalName) {
-  return store.mappings.find((mapping) => mapping.hospitalName === hospitalName);
-}
-
-function getPartnerForHospital(hospitalName) {
-  const mapping = getMapping(hospitalName);
-  return mapping ? getPartner(mapping.partnerId) : null;
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
 }
 
 function switchView(viewId) {
@@ -76,94 +65,56 @@ function switchView(viewId) {
 }
 
 function render() {
-  const unmapped = getUnmappedHospitals();
-  const todayReports = store.reports.filter((report) => report.date === $("#reportDate").value);
+  const partners = unique(store.masterItems.map((item) => item.partnerName));
+  const hospitals = unique(store.masterItems.map((item) => item.hospitalName));
+  const matchCount = store.results.reduce((sum, result) => sum + result.items.length, 0);
 
-  $("#statPartners").textContent = store.partners.length;
-  $("#statMappings").textContent = store.mappings.length;
-  $("#statItems").textContent = store.prescriptionItems.length;
+  $("#statPartners").textContent = partners.length;
+  $("#statMasterItems").textContent = store.masterItems.length;
+  $("#statHospitals").textContent = hospitals.length;
   $("#statStockouts").textContent = store.stockoutItems.length;
-  $("#statUnmapped").textContent = unmapped.length;
-  $("#statReports").textContent = todayReports.length;
-  $("#todayBadge").textContent = today();
-  $("#settlementMonthBadge").textContent = store.settlementMonth ? `최근 정산월 ${store.settlementMonth}` : "업로드 전";
+  $("#statMatches").textContent = matchCount;
+  $("#statMatchedPartners").textContent = store.results.length;
 
-  renderPartnerSelect();
-  renderMappings();
-  renderItems();
-  renderStockouts();
-  renderReports();
+  renderMasterTable();
+  renderStockoutTable();
+  renderResults();
   renderHistory();
-  renderUnmapped();
 }
 
-function renderPartnerSelect() {
-  const select = $("#partnerSelect");
-  const current = select.value;
-  select.innerHTML = `<option value="">사업자 선택</option>`;
-  for (const partner of store.partners) {
-    const option = document.createElement("option");
-    option.value = partner.id;
-    option.textContent = `${partner.name}${partner.phone ? ` / ${partner.phone}` : ""}`;
-    select.appendChild(option);
-  }
-  select.value = current;
-}
-
-function renderMappings() {
+function renderMasterTable() {
   const query = clean($("#masterSearch").value).toLowerCase();
-  const rows = store.mappings.filter((mapping) => {
-    const partner = getPartner(mapping.partnerId);
-    const text = [mapping.hospitalName, mapping.memo, partner?.name, partner?.phone, partner?.contact].join(" ").toLowerCase();
+  const rows = store.masterItems.filter((item) => {
+    const text = [
+      item.partnerName,
+      item.phone,
+      item.hospitalName,
+      item.productName,
+      item.contactName,
+      item.memo,
+    ].join(" ").toLowerCase();
     return !query || text.includes(query);
   });
 
-  $("#mappingTable").innerHTML = rows.length
+  $("#masterTable").innerHTML = rows.length
     ? rows
-        .map((mapping) => {
-          const partner = getPartner(mapping.partnerId) || {};
-          return `
+        .map(
+          (item) => `
             <tr>
-              <td>${escapeHtml(mapping.hospitalName)}</td>
-              <td>${escapeHtml(partner.name || "")}</td>
-              <td>${escapeHtml(partner.phone || "")}</td>
-              <td>${escapeHtml(partner.contact || "")}</td>
-              <td>${escapeHtml(mapping.memo || partner.memo || "")}</td>
-              <td><button class="ghost-button" data-delete-mapping="${mapping.id}">삭제</button></td>
-            </tr>
-          `;
-        })
-        .join("")
-    : `<tr><td colspan="6">등록된 병의원 연결이 없습니다.</td></tr>`;
-}
-
-function renderItems() {
-  const query = clean($("#itemSearch").value).toLowerCase();
-  const rows = store.prescriptionItems.filter((item) => {
-    const partner = getPartnerForHospital(item.hospitalName);
-    const text = [item.month, item.hospitalName, item.productName, item.makerName, partner?.name].join(" ").toLowerCase();
-    return !query || text.includes(query);
-  });
-
-  $("#itemTable").innerHTML = rows.length
-    ? rows
-        .map((item) => {
-          const partner = getPartnerForHospital(item.hospitalName);
-          return `
-            <tr>
-              <td>${escapeHtml(item.month)}</td>
+              <td>${escapeHtml(item.partnerName)}</td>
+              <td>${escapeHtml(item.phone || "")}</td>
               <td>${escapeHtml(item.hospitalName)}</td>
               <td>${escapeHtml(item.productName)}</td>
-              <td>${escapeHtml(item.makerName)}</td>
-              <td>${partner ? escapeHtml(partner.name) : '<span class="empty-state">미연결</span>'}</td>
+              <td>${escapeHtml(item.contactName || "")}</td>
+              <td>${escapeHtml(item.memo || "")}</td>
             </tr>
-          `;
-        })
+          `,
+        )
         .join("")
-    : `<tr><td colspan="5">정산현황을 업로드하면 품목이 표시됩니다.</td></tr>`;
+    : `<tr><td colspan="6">거래처 마스터 엑셀을 업로드해 주세요.</td></tr>`;
 }
 
-function renderStockouts() {
+function renderStockoutTable() {
   $("#stockoutTable").innerHTML = store.stockoutItems.length
     ? store.stockoutItems
         .map(
@@ -175,84 +126,62 @@ function renderStockouts() {
           `,
         )
         .join("")
-    : `<tr><td colspan="2">품절 PDF를 업로드하거나 수동 입력해 주세요.</td></tr>`;
+    : `<tr><td colspan="2">품절 PDF를 업로드하거나 붙여넣기로 입력해 주세요.</td></tr>`;
 }
 
-function renderReports() {
-  const grid = $("#reportGrid");
-  const date = $("#reportDate").value;
-  const reports = store.reports.filter((report) => report.date === date);
-
-  if (!reports.length) {
-    grid.innerHTML = `<section class="panel empty-state">아직 생성된 리포트가 없습니다. 매칭 실행을 눌러주세요.</section>`;
+function renderResults() {
+  const grid = $("#resultGrid");
+  if (!store.results.length) {
+    grid.innerHTML = `<section class="panel empty-state">아직 품절 매칭 결과가 없습니다. 마스터와 품절 리스트를 올린 뒤 매칭 실행을 눌러주세요.</section>`;
     return;
   }
 
-  const template = $("#reportCardTemplate");
+  const template = $("#resultCardTemplate");
   grid.innerHTML = "";
-  for (const report of reports) {
+  for (const result of store.results) {
     const node = template.content.firstElementChild.cloneNode(true);
-    if (report.status === "done") node.classList.add("done");
-    node.querySelector("h3").textContent = report.partnerName;
-    node.querySelector("p").textContent = report.phone ? `연락처 ${report.phone}` : "연락처 없음";
-    node.querySelector(".report-count").textContent = `${report.items.length}건`;
-    node.querySelector("pre").textContent = report.message;
-    node.querySelector(".copy-button").dataset.reportId = report.id;
-    node.querySelector(".print-button").dataset.reportId = report.id;
-    node.querySelector(".done-button").dataset.reportId = report.id;
-    node.querySelector(".done-button").textContent = report.status === "done" ? "발송완료됨" : "발송완료";
+    if (result.status === "done") node.classList.add("done");
+    node.querySelector("h3").textContent = result.partnerName;
+    node.querySelector("p").textContent = result.phone ? `연락처 ${result.phone}` : "연락처 없음";
+    node.querySelector(".report-count").textContent = `${result.items.length}건`;
+    node.querySelector("pre").textContent = result.message;
+    node.querySelector(".copy-button").dataset.resultId = result.id;
+    node.querySelector(".print-button").dataset.resultId = result.id;
+    node.querySelector(".done-button").dataset.resultId = result.id;
+    node.querySelector(".done-button").textContent = result.status === "done" ? "전달완료됨" : "전달완료";
     grid.appendChild(node);
   }
 }
 
 function renderHistory() {
-  const reports = [...store.reports].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  $("#historyList").innerHTML = reports.length
-    ? reports
+  $("#historyList").innerHTML = store.history.length
+    ? [...store.history]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map(
-          (report) => `
+          (entry) => `
             <article class="history-item">
               <div class="panel-heading">
                 <div>
-                  <h3>${escapeHtml(report.date)} / ${escapeHtml(report.partnerName)}</h3>
-                  <p class="muted">${report.status === "done" ? "발송완료" : "미발송"} · ${escapeHtml(report.phone || "연락처 없음")}</p>
+                  <h3>${escapeHtml(entry.date)} / ${escapeHtml(entry.partnerName)}</h3>
+                  <p class="muted">${entry.items.length}건 · ${entry.status === "done" ? "전달완료" : "생성됨"}</p>
                 </div>
-                <span class="badge">${report.items.length}건</span>
+                <span class="badge">${escapeHtml(entry.phone || "연락처 없음")}</span>
               </div>
-              <pre>${escapeHtml(report.message)}</pre>
+              <pre>${escapeHtml(entry.message)}</pre>
             </article>
           `,
         )
         .join("")
-    : `<section class="panel empty-state">저장된 리포트 이력이 없습니다.</section>`;
+    : `<section class="panel empty-state">저장된 매칭 이력이 없습니다.</section>`;
 }
 
-function getUnmappedHospitals() {
-  const hospitals = new Set(store.prescriptionItems.map((item) => item.hospitalName));
-  return [...hospitals].filter((hospital) => !getMapping(hospital)).sort();
-}
-
-function renderUnmapped() {
-  const unmapped = getUnmappedHospitals();
-  const box = $("#unmappedChips");
-  if (!unmapped.length) {
-    box.className = "chip-list empty-state";
-    box.textContent = store.prescriptionItems.length ? "미연결 병의원이 없습니다." : "정산현황을 업로드하면 표시됩니다.";
-    return;
-  }
-  box.className = "chip-list";
-  box.innerHTML = unmapped
-    .map((hospital) => `<button class="chip" data-hospital="${escapeHtml(hospital)}">${escapeHtml(hospital)}</button>`)
-    .join("");
-}
-
-async function readFileText(file) {
+async function readFileAsText(file) {
   const buffer = await file.arrayBuffer();
   for (const encoding of ["utf-8", "euc-kr"]) {
     try {
       return new TextDecoder(encoding).decode(buffer);
     } catch {
-      // Try next encoding.
+      // Try next.
     }
   }
   return new TextDecoder().decode(buffer);
@@ -265,6 +194,13 @@ function rowsFromHtml(text) {
   );
 }
 
+function rowsFromCsv(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.split(",").map(clean))
+    .filter((row) => row.some(Boolean));
+}
+
 async function rowsFromWorkbook(file) {
   if (!window.XLSX) {
     throw new Error("엑셀 파서 로딩에 실패했습니다. 인터넷 연결을 확인해 주세요.");
@@ -275,45 +211,74 @@ async function rowsFromWorkbook(file) {
   return window.XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false }).map((row) => row.map(clean));
 }
 
-function findHeader(rows) {
+function findHeader(rows, requiredHeaders) {
   for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index];
-    if (row.includes("병의원명") && row.includes("제품명")) {
-      const headers = Object.fromEntries(row.map((name, pos) => [name, pos]));
-      return { index, headers };
+    const normalized = rows[index].map(clean);
+    const ok = requiredHeaders.every((header) => normalized.includes(header));
+    if (ok) return { index, headers: Object.fromEntries(normalized.map((name, pos) => [name, pos])) };
+  }
+  throw new Error(`필수 컬럼을 찾지 못했습니다: ${requiredHeaders.join(", ")}`);
+}
+
+function findHeaderGroups(rows, headerGroups) {
+  for (let index = 0; index < rows.length; index += 1) {
+    const normalized = rows[index].map(clean);
+    const ok = headerGroups.every((group) => group.some((header) => normalized.includes(header)));
+    if (ok) return { index, headers: Object.fromEntries(normalized.map((name, pos) => [name, pos])) };
+  }
+  throw new Error("필수 컬럼을 찾지 못했습니다: 사업자명, 병의원명, 제품명");
+}
+
+function getCell(row, headers, names) {
+  for (const name of names) {
+    const index = headers[name];
+    if (index !== undefined && index < row.length) return clean(row[index]);
+  }
+  return "";
+}
+
+async function parseMasterFile(file) {
+  const lower = file.name.toLowerCase();
+  let rows;
+  if (lower.endsWith(".csv")) rows = rowsFromCsv(await readFileAsText(file));
+  else if (lower.endsWith(".xlsx")) rows = await rowsFromWorkbook(file);
+  else {
+    try {
+      rows = await rowsFromWorkbook(file);
+    } catch {
+      rows = rowsFromHtml(await readFileAsText(file));
     }
   }
-  throw new Error("정산현황 파일에서 병의원명/제품명 헤더를 찾지 못했습니다.");
-}
 
-function parsePrescriptionRows(rows) {
-  const { index, headers } = findHeader(rows);
-  const get = (row, name) => clean(row[headers[name]]);
-  let month = "";
+  const { index, headers } = findHeaderGroups(rows, [
+    ["사업자명", "사업자"],
+    ["병의원명", "거래처명"],
+    ["제품명", "품목", "품목명"],
+  ]);
   const items = [];
+  const seen = new Set();
 
   for (const row of rows.slice(index + 1)) {
-    const hospitalName = get(row, "병의원명");
-    const productName = get(row, "제품명");
-    const rowMonth = get(row, "정산월");
-    if (rowMonth && !month) month = rowMonth;
-    if (!hospitalName || !productName || hospitalName.includes("계")) continue;
-    items.push({
+    const partnerName = getCell(row, headers, ["사업자명", "사업자"]);
+    const hospitalName = getCell(row, headers, ["병의원명", "거래처명"]);
+    const productName = getCell(row, headers, ["제품명", "품목", "품목명"]);
+    if (!partnerName || !hospitalName || !productName) continue;
+    const item = {
       id: id(),
-      month: rowMonth || month || today().slice(0, 7),
+      partnerName,
       hospitalName,
       productName,
-      makerName: get(row, "제약사명"),
-      insuranceCode: get(row, "보험코드"),
-    });
+      phone: getCell(row, headers, ["연락처", "핸드폰", "휴대폰", "전화번호"]),
+      contactName: getCell(row, headers, ["담당자명", "담당자"]),
+      memo: getCell(row, headers, ["메모", "비고"]),
+    };
+    const key = [item.partnerName, item.hospitalName, item.productName].map(clean).join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(item);
   }
-  return { month: month || today().slice(0, 7), items };
-}
-
-async function parseSettlementFile(file) {
-  const lower = file.name.toLowerCase();
-  const rows = lower.endsWith(".xlsx") ? await rowsFromWorkbook(file) : rowsFromHtml(await readFileText(file));
-  return parsePrescriptionRows(rows);
+  if (!items.length) throw new Error("거래처 마스터에서 유효한 데이터를 찾지 못했습니다.");
+  return items;
 }
 
 async function parsePdfStockouts(file) {
@@ -331,15 +296,15 @@ async function parsePdfStockouts(file) {
       .filter((item) => item.text && item.y > 0)
       .sort((a, b) => b.y - a.y || a.x - b.x);
 
-    const rows = [];
+    const groupedRows = [];
     for (const fragment of fragments) {
-      const last = rows[rows.length - 1];
-      if (!last || Math.abs(last[0].y - fragment.y) > 3) rows.push([fragment]);
+      const last = groupedRows[groupedRows.length - 1];
+      if (!last || Math.abs(last[0].y - fragment.y) > 3) groupedRows.push([fragment]);
       else last.push(fragment);
     }
 
     let started = false;
-    for (const row of rows) {
+    for (const row of groupedRows) {
       const combined = row.map((item) => item.text).join(" ");
       if (combined.includes("제약사명") && (combined.includes("제품명") || combined.includes("출하"))) {
         started = true;
@@ -388,11 +353,9 @@ function findMatches() {
   }));
   const matches = [];
 
-  for (const prescription of store.prescriptionItems) {
-    const partner = getPartnerForHospital(prescription.hospitalName);
-    if (!partner) continue;
-    const full = normalizeProduct(prescription.productName);
-    const stem = productStem(prescription.productName);
+  for (const master of store.masterItems) {
+    const full = normalizeProduct(master.productName);
+    const stem = productStem(master.productName);
     if (full.length < 4 && stem.length < 4) continue;
 
     for (const stockout of stockoutIndex) {
@@ -400,91 +363,109 @@ function findMatches() {
       if (full.length >= 4 && stockout.full.includes(full)) matchType = "정확/포함";
       else if (stem.length >= 4 && stockout.stem.includes(stem)) matchType = "제품명 기준";
       if (!matchType) continue;
-      matches.push({ prescription, partner, stockout: stockout.item, matchType });
+      matches.push({ master, stockout: stockout.item, matchType });
       break;
     }
   }
   return matches;
 }
 
-function makeMessage(date, partner, matches) {
-  if (!matches.length) {
-    return `✅ [${date} / 품절 확인]\n\n${partner.name} 관련 거래처 품목 중\n현재 품절 리스트와 매칭된 품목은 없습니다.`;
-  }
+function buildMessage(date, partnerName, phone, matches) {
   const circled = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
   const lines = [
     `🚨 [${date} / 품절 알림]`,
     "",
-    `${partner.name} 관련 품절 매칭 품목: 총 ${matches.length}개`,
+    `${partnerName} 관련 품절 품목: 총 ${matches.length}개`,
     "",
     divider,
   ];
+
   matches.forEach((match, index) => {
     lines.push(
-      `${circled[index] || `${index + 1}.`} ${match.prescription.hospitalName}`,
+      `${circled[index] || `${index + 1}.`} ${match.master.hospitalName}`,
       `- 품목명: ${match.stockout.productName}`,
+      `- 등록 품목명: ${match.master.productName}`,
       `- 출하예정일: ${match.stockout.expectedDate || "-"}`,
       `- 매칭 기준: ${match.matchType}`,
       "",
     );
   });
+
   lines.push(divider, "", "거래처별 재고 및 대체 가능 여부 확인 부탁드립니다.");
   return lines.join("\n");
 }
 
-function generateReports() {
-  const date = $("#reportDate").value || today();
+function runMatch() {
+  const date = $("#matchDate").value || today();
   const matches = findMatches();
   const grouped = new Map();
 
-  for (const partner of store.partners) grouped.set(partner.id, []);
   for (const match of matches) {
-    grouped.get(match.partner.id)?.push(match);
+    const key = match.master.partnerName;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        partnerName: match.master.partnerName,
+        phone: match.master.phone,
+        matches: [],
+      });
+    }
+    grouped.get(key).matches.push(match);
   }
 
-  store.reports = store.reports.filter((report) => report.date !== date);
-  for (const partner of store.partners) {
-    const items = grouped.get(partner.id) || [];
-    store.reports.push({
+  store.results = [...grouped.values()]
+    .map((group) => ({
       id: id(),
       date,
-      partnerId: partner.id,
-      partnerName: partner.name,
-      phone: partner.phone,
+      partnerName: group.partnerName,
+      phone: group.phone,
       status: "ready",
       createdAt: new Date().toISOString(),
-      items: items.map((match) => ({
-        hospitalName: match.prescription.hospitalName,
+      items: group.matches.map((match) => ({
+        hospitalName: match.master.hospitalName,
         productName: match.stockout.productName,
+        registeredProductName: match.master.productName,
         expectedDate: match.stockout.expectedDate,
         matchType: match.matchType,
       })),
-      message: makeMessage(date, partner, items),
-    });
-  }
+      message: buildMessage(date, group.partnerName, group.phone, group.matches),
+    }))
+    .sort((a, b) => a.partnerName.localeCompare(b.partnerName, "ko"));
+
+  store.history.push(...store.results.map((result) => ({ ...result })));
   saveStore();
   render();
-  switchView("reports");
+  switchView("results");
 }
 
-function printReport(report) {
+function printText(title, text) {
   const win = window.open("", "_blank", "width=760,height=900");
   win.document.write(`
     <html lang="ko">
       <head>
         <meta charset="utf-8" />
-        <title>${escapeHtml(report.partnerName)} 품절 리포트</title>
+        <title>${escapeHtml(title)}</title>
         <style>
           body { font-family: "Malgun Gothic", Arial, sans-serif; padding: 32px; line-height: 1.6; }
           pre { white-space: pre-wrap; font: inherit; }
         </style>
       </head>
-      <body><pre>${escapeHtml(report.message)}</pre></body>
+      <body><pre>${escapeHtml(text)}</pre></body>
     </html>
   `);
   win.document.close();
   win.focus();
   win.print();
+}
+
+function downloadTemplate() {
+  const csv = "\ufeff사업자명,연락처,담당자명,병의원명,제품명,메모\n에스팜,010-0000-0000,김대표,수이비인후과,브로나제장용정,\n에스팜,010-0000-0000,김대표,박영준내과,페북트정40mg,\n";
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "거래처마스터_양식.csv";
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 document.querySelectorAll(".nav-button").forEach((button) => {
@@ -495,133 +476,110 @@ document.querySelectorAll("[data-view-jump]").forEach((button) => {
   button.addEventListener("click", () => switchView(button.dataset.viewJump));
 });
 
-$("#quickGenerateButton").addEventListener("click", generateReports);
-$("#generateReportsButton").addEventListener("click", generateReports);
+$("#matchDate").value = today();
+$("#runMatchTopButton").addEventListener("click", runMatch);
+$("#runMatchButton").addEventListener("click", runMatch);
 $("#saveButton").addEventListener("click", () => {
   saveStore();
   alert("현재 데이터가 브라우저에 저장되었습니다.");
 });
-$("#resetDemoButton").addEventListener("click", () => location.reload());
-$("#masterSearch").addEventListener("input", renderMappings);
-$("#itemSearch").addEventListener("input", renderItems);
+$("#downloadTemplateButton").addEventListener("click", downloadTemplate);
+$("#masterSearch").addEventListener("input", renderMasterTable);
 
-$("#partnerForm").addEventListener("submit", (event) => {
+$("#masterUploadForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
-  const existing = store.partners.find((partner) => partner.name === clean(payload.name));
-  const partner = {
-    id: existing?.id || id(),
-    name: clean(payload.name),
-    phone: clean(payload.phone),
-    contact: clean(payload.contact),
-    memo: clean(payload.memo),
-  };
-  store.partners = existing
-    ? store.partners.map((item) => (item.id === existing.id ? partner : item))
-    : [...store.partners, partner];
-  event.currentTarget.reset();
-  saveStore();
-  render();
-});
-
-$("#mappingForm").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
-  const hospitalName = clean(payload.hospitalName);
-  const mapping = {
-    id: store.mappings.find((item) => item.hospitalName === hospitalName)?.id || id(),
-    hospitalName,
-    partnerId: payload.partnerId,
-    memo: clean(payload.memo),
-  };
-  store.mappings = store.mappings.filter((item) => item.hospitalName !== hospitalName).concat(mapping);
-  event.currentTarget.reset();
-  saveStore();
-  render();
-});
-
-$("#mappingTable").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-delete-mapping]");
-  if (!button) return;
-  store.mappings = store.mappings.filter((mapping) => mapping.id !== button.dataset.deleteMapping);
-  saveStore();
-  render();
-});
-
-$("#unmappedChips").addEventListener("click", (event) => {
-  const chip = event.target.closest("[data-hospital]");
-  if (!chip) return;
-  switchView("master");
-  $("#hospitalInput").value = chip.dataset.hospital;
-  $("#hospitalInput").focus();
-});
-
-$("#settlementForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const file = $("#settlementFile").files[0];
-  if (!file) return alert("정산현황 파일을 선택해 주세요.");
+  const file = $("#masterFile").files[0];
+  if (!file) return alert("거래처 마스터 엑셀 파일을 선택해 주세요.");
   try {
-    const parsed = await parseSettlementFile(file);
-    store.settlementMonth = parsed.month;
-    store.prescriptionItems = parsed.items;
+    const items = await parseMasterFile(file);
+    store.masterItems = items;
+    store.results = [];
     saveStore();
-    $("#settlementResult").classList.remove("hidden");
-    $("#settlementResult").textContent = `${parsed.month} 정산현황 저장 완료: 품목 ${parsed.items.length}개`;
+    $("#masterUploadResult").classList.remove("hidden");
+    $("#masterUploadResult").textContent = `거래처 마스터 반영 완료: ${items.length}개 품목`;
     render();
   } catch (error) {
     alert(error.message);
   }
 });
 
-$("#stockoutPdfForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const file = $("#stockoutPdfFile").files[0];
-  if (!file) return alert("품절 PDF를 선택해 주세요.");
+async function handlePdfUpload(input) {
+  const file = input.files[0];
+  if (!file) return alert("품절 PDF 파일을 선택해 주세요.");
   try {
     store.stockoutItems = await parsePdfStockouts(file);
+    store.results = [];
     saveStore();
+    $("#stockoutUploadResult").classList.remove("hidden");
+    $("#stockoutUploadResult").textContent = `품절 리스트 추출 완료: ${store.stockoutItems.length}개`;
     render();
-    alert(`품절 품목 ${store.stockoutItems.length}개를 추출했습니다.`);
+    switchView("stockout");
   } catch (error) {
     alert(`PDF 추출 실패: ${error.message}`);
   }
+}
+
+$("#stockoutPdfForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  handlePdfUpload($("#stockoutPdfFile"));
+});
+
+$("#stockoutPdfFormSecondary").addEventListener("submit", (event) => {
+  event.preventDefault();
+  handlePdfUpload($("#stockoutPdfFileSecondary"));
 });
 
 $("#manualStockoutButton").addEventListener("click", () => {
   const items = parseManualStockouts($("#manualStockoutText").value);
-  if (!items.length) return alert("수동 입력할 품절 품목이 없습니다.");
+  if (!items.length) return alert("품절 품목을 입력해 주세요.");
   store.stockoutItems = items;
+  store.results = [];
   saveStore();
   render();
 });
 
 $("#clearStockoutButton").addEventListener("click", () => {
-  if (!confirm("현재 품절 목록을 비울까요?")) return;
+  if (!confirm("현재 품절 리스트를 비울까요?")) return;
   store.stockoutItems = [];
+  store.results = [];
   saveStore();
   render();
 });
 
-$("#reportGrid").addEventListener("click", async (event) => {
+$("#resultGrid").addEventListener("click", async (event) => {
   const copyButton = event.target.closest(".copy-button");
   const printButton = event.target.closest(".print-button");
   const doneButton = event.target.closest(".done-button");
-  const reportId = copyButton?.dataset.reportId || printButton?.dataset.reportId || doneButton?.dataset.reportId;
-  if (!reportId) return;
-  const report = store.reports.find((item) => item.id === reportId);
-  if (!report) return;
+  const resultId = copyButton?.dataset.resultId || printButton?.dataset.resultId || doneButton?.dataset.resultId;
+  if (!resultId) return;
+  const result = store.results.find((item) => item.id === resultId);
+  if (!result) return;
   if (copyButton) {
-    await navigator.clipboard.writeText(report.message);
+    await navigator.clipboard.writeText(result.message);
     copyButton.textContent = "복사완료";
     setTimeout(() => (copyButton.textContent = "복사"), 1200);
   }
-  if (printButton) printReport(report);
+  if (printButton) printText(`${result.partnerName} 품절 리포트`, result.message);
   if (doneButton) {
-    report.status = "done";
-    report.sentAt = new Date().toISOString();
+    result.status = "done";
+    const history = store.history.find((entry) => entry.id === result.id);
+    if (history) history.status = "done";
     saveStore();
     render();
   }
+});
+
+$("#copyAllButton").addEventListener("click", async () => {
+  const text = store.results.map((result) => result.message).join("\n\n");
+  if (!text) return alert("복사할 매칭 결과가 없습니다.");
+  await navigator.clipboard.writeText(text);
+  alert("전체 결과를 복사했습니다.");
+});
+
+$("#printAllButton").addEventListener("click", () => {
+  const text = store.results.map((result) => result.message).join("\n\n");
+  if (!text) return alert("출력할 매칭 결과가 없습니다.");
+  printText("사업자별 품절 매칭 전체 결과", text);
 });
 
 $("#exportButton").addEventListener("click", () => {
@@ -642,12 +600,11 @@ $("#importFile").addEventListener("change", async (event) => {
   render();
 });
 
-$("#clearReportsButton").addEventListener("click", () => {
-  if (!confirm("리포트 이력을 모두 삭제할까요?")) return;
-  store.reports = [];
+$("#clearHistoryButton").addEventListener("click", () => {
+  if (!confirm("매칭 이력을 모두 비울까요?")) return;
+  store.history = [];
   saveStore();
   render();
 });
 
-$("#reportDate").value = today();
 render();
