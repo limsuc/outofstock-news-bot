@@ -126,7 +126,6 @@ function updateWorkflowState() {
 
   $("#stockoutPdfForm button").disabled = !hasMaster;
   $("#stockoutPdfFile").disabled = !hasMaster;
-  $("#runMatchTopButton").disabled = !(hasMaster && hasStockout);
   $("#runMatchButton").disabled = !(hasMaster && hasStockout);
 }
 
@@ -564,7 +563,6 @@ document.querySelectorAll("[data-view-jump]").forEach((button) => {
 });
 
 $("#matchDate").value = today();
-$("#runMatchTopButton").addEventListener("click", runMatch);
 $("#runMatchButton").addEventListener("click", runMatch);
 $("#saveButton").addEventListener("click", () => {
   saveStore();
