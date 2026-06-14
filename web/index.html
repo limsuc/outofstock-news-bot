@@ -39,62 +39,86 @@
         </header>
 
         <section id="dashboard" class="view active">
-          <div class="stats-grid">
-            <div class="metric"><span>사업자</span><strong id="statPartners">0</strong></div>
-            <div class="metric"><span>마스터 품목</span><strong id="statMasterItems">0</strong></div>
-            <div class="metric"><span>병의원</span><strong id="statHospitals">0</strong></div>
-            <div class="metric"><span>품절 품목</span><strong id="statStockouts">0</strong></div>
-            <div class="metric warning"><span>매칭 품목</span><strong id="statMatches">0</strong></div>
-            <div class="metric good"><span>결과 사업자</span><strong id="statMatchedPartners">0</strong></div>
-          </div>
-
-          <div class="workflow">
-            <div><b>1</b><span>거래처 마스터 엑셀 업로드</span></div>
-            <div><b>2</b><span>품절 PDF 업로드</span></div>
-            <div><b>3</b><span>품절 품목만 매칭</span></div>
-            <div><b>4</b><span>사업자별 메시지 복사</span></div>
-          </div>
-
-          <div class="two-column">
-            <section class="panel">
-              <div class="panel-heading">
-                <h2>거래처 마스터 업로드</h2>
-                <span class="badge">필수</span>
+          <div class="step-layout">
+            <section class="step-card" id="stepMaster">
+              <div class="step-header">
+                <span class="step-number">1</span>
+                <div>
+                  <h2>거래처 마스터 업로드</h2>
+                  <p>사업자명, 병의원명, 제품명이 들어있는 엑셀을 먼저 올립니다.</p>
+                </div>
+                <span class="step-status" id="masterStatus">대기</span>
               </div>
-              <p class="muted">필수 컬럼: <b>사업자명</b>, <b>병의원명</b>, <b>제품명</b>. 선택 컬럼: 연락처, 담당자명, 메모.</p>
               <form id="masterUploadForm" class="upload-box">
                 <input id="masterFile" type="file" accept=".xls,.xlsx,.csv" />
                 <button class="primary-button" type="submit">마스터 반영</button>
               </form>
-              <button id="downloadTemplateButton" class="link-button" type="button">마스터 양식 CSV 다운로드</button>
+              <div class="step-helper">
+                <span>필수 컬럼: 사업자명, 병의원명, 제품명</span>
+                <button id="downloadTemplateButton" class="link-button" type="button">양식 CSV 다운로드</button>
+              </div>
               <div id="masterUploadResult" class="result-box hidden"></div>
             </section>
 
-            <section class="panel">
-              <div class="panel-heading">
-                <h2>품절 리스트 업로드</h2>
-                <span class="badge muted-badge">매일</span>
+            <section class="step-card" id="stepStockout">
+              <div class="step-header">
+                <span class="step-number">2</span>
+                <div>
+                  <h2>품절 리스트 업로드</h2>
+                  <p>매일 받은 품절 PDF를 올리면 품목명과 출하예정일을 추출합니다.</p>
+                </div>
+                <span class="step-status" id="stockoutStatus">대기</span>
               </div>
-              <p class="muted">품절 PDF에서 품목명과 출하예정일을 추출합니다. PDF 추출이 안 되면 붙여넣기 입력을 사용할 수 있습니다.</p>
               <form id="stockoutPdfForm" class="upload-box">
                 <input id="stockoutPdfFile" type="file" accept=".pdf" />
                 <button class="primary-button" type="submit">PDF 추출</button>
               </form>
+              <div class="step-helper">
+                <span>PDF 추출이 안 되면 품절 리스트 탭에서 붙여넣기 입력을 사용할 수 있습니다.</span>
+                <button class="link-button" type="button" data-view-jump="stockout">붙여넣기 입력 열기</button>
+              </div>
               <div id="stockoutUploadResult" class="result-box hidden"></div>
             </section>
-          </div>
 
-          <section class="panel">
-            <div class="panel-heading">
-              <h2>빠른 실행</h2>
-              <input id="matchDate" type="date" />
-            </div>
-            <div class="quick-grid">
-              <button class="quick-card" data-view-jump="master">마스터 확인</button>
-              <button class="quick-card" data-view-jump="stockout">품절 리스트 확인</button>
-              <button id="runMatchButton" class="quick-card primary">품절 품목만 출력</button>
-            </div>
-          </section>
+            <section class="step-card action-step" id="stepMatch">
+              <div class="step-header">
+                <span class="step-number">3</span>
+                <div>
+                  <h2>매칭 실행</h2>
+                  <p>마스터와 품절 리스트를 대조해서 품절 품목이 있는 사업자만 출력합니다.</p>
+                </div>
+                <span class="step-status" id="matchStatus">대기</span>
+              </div>
+              <div class="match-controls">
+                <label>
+                  기준일
+                  <input id="matchDate" type="date" />
+                </label>
+                <button id="runMatchButton" class="primary-button large-action">품절 품목만 출력</button>
+              </div>
+              <p class="muted">용량 숫자가 있는 제품은 숫자와 단위가 맞을 때만 매칭합니다. 예: 클래리드정500mg ≠ 클래리드정250mg</p>
+            </section>
+
+            <section class="step-card result-step" id="stepResult">
+              <div class="step-header">
+                <span class="step-number">4</span>
+                <div>
+                  <h2>사업자별 메시지 복사</h2>
+                  <p>생성된 결과를 사업자별로 복사하거나 PDF로 출력합니다.</p>
+                </div>
+                <span class="step-status" id="resultStatus">대기</span>
+              </div>
+              <div class="summary-grid">
+                <div><span>사업자</span><strong id="statPartners">0</strong></div>
+                <div><span>마스터 품목</span><strong id="statMasterItems">0</strong></div>
+                <div><span>병의원</span><strong id="statHospitals">0</strong></div>
+                <div><span>품절 품목</span><strong id="statStockouts">0</strong></div>
+                <div><span>매칭 품목</span><strong id="statMatches">0</strong></div>
+                <div><span>결과 사업자</span><strong id="statMatchedPartners">0</strong></div>
+              </div>
+              <button class="secondary-button" type="button" data-view-jump="results">결과 화면 열기</button>
+            </section>
+          </div>
         </section>
 
         <section id="master" class="view">
@@ -202,7 +226,7 @@
           </div>
           <span class="report-count"></span>
         </div>
-        <pre></pre>
+        <div class="message-preview"></div>
         <div class="report-actions">
           <button class="copy-button secondary-button">복사</button>
           <button class="print-button secondary-button">PDF 출력</button>

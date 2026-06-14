@@ -53,6 +53,29 @@ function productStem(value) {
     .replace(/[^A-Z가-힣]/g, "");
 }
 
+function extractStrengthTokens(value) {
+  const text = clean(value).normalize("NFKC").toUpperCase();
+  const tokens = [];
+  const strengthRe = /(\d+(?:\.\d+)?(?:\/\d+(?:\.\d+)?)*)\s*(MG|ML|G|MCG|UG|IU|%|정|캡슐|T|C|B|관|병|포)?/g;
+  let match;
+  while ((match = strengthRe.exec(text))) {
+    const number = match[1];
+    const unit = match[2] || "";
+    tokens.push(unit ? `${number}${unit}` : number);
+  }
+  return [...new Set(tokens)];
+}
+
+function strengthsCompatible(masterName, stockoutName) {
+  const masterTokens = extractStrengthTokens(masterName);
+  if (!masterTokens.length) return true;
+
+  const stockoutTokens = extractStrengthTokens(stockoutName);
+  if (!stockoutTokens.length) return false;
+
+  return masterTokens.every((token) => stockoutTokens.includes(token));
+}
+
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -80,6 +103,31 @@ function render() {
   renderStockoutTable();
   renderResults();
   renderHistory();
+  updateWorkflowState();
+}
+
+function setStepState(stepId, statusId, text, disabled = false) {
+  const card = $(`#${stepId}`);
+  const badge = $(`#${statusId}`);
+  card?.classList.toggle("locked", disabled);
+  card?.classList.toggle("completed", text.includes("완료"));
+  if (badge) badge.textContent = text;
+}
+
+function updateWorkflowState() {
+  const hasMaster = store.masterItems.length > 0;
+  const hasStockout = store.stockoutItems.length > 0;
+  const hasResults = store.results.length > 0;
+
+  setStepState("stepMaster", "masterStatus", hasMaster ? `${store.masterItems.length}개 완료` : "대기");
+  setStepState("stepStockout", "stockoutStatus", hasStockout ? `${store.stockoutItems.length}개 완료` : "마스터 필요", !hasMaster);
+  setStepState("stepMatch", "matchStatus", hasResults ? "매칭 완료" : hasMaster && hasStockout ? "실행 가능" : "자료 필요", !(hasMaster && hasStockout));
+  setStepState("stepResult", "resultStatus", hasResults ? `${store.results.length}명 완료` : "대기", !hasResults);
+
+  $("#stockoutPdfForm button").disabled = !hasMaster;
+  $("#stockoutPdfFile").disabled = !hasMaster;
+  $("#runMatchTopButton").disabled = !(hasMaster && hasStockout);
+  $("#runMatchButton").disabled = !(hasMaster && hasStockout);
 }
 
 function renderMasterTable() {
@@ -144,7 +192,7 @@ function renderResults() {
     node.querySelector("h3").textContent = result.partnerName;
     node.querySelector("p").textContent = result.phone ? `연락처 ${result.phone}` : "연락처 없음";
     node.querySelector(".report-count").textContent = `${result.items.length}건`;
-    node.querySelector("pre").textContent = result.message;
+    node.querySelector(".message-preview").innerHTML = messageToHtml(result.message);
     node.querySelector(".copy-button").dataset.resultId = result.id;
     node.querySelector(".print-button").dataset.resultId = result.id;
     node.querySelector(".done-button").dataset.resultId = result.id;
@@ -167,7 +215,7 @@ function renderHistory() {
                 </div>
                 <span class="badge">${escapeHtml(entry.phone || "연락처 없음")}</span>
               </div>
-              <pre>${escapeHtml(entry.message)}</pre>
+              <div class="message-preview">${messageToHtml(entry.message)}</div>
             </article>
           `,
         )
@@ -361,7 +409,9 @@ function findMatches() {
     for (const stockout of stockoutIndex) {
       let matchType = "";
       if (full.length >= 4 && stockout.full.includes(full)) matchType = "정확/포함";
-      else if (stem.length >= 4 && stockout.stem.includes(stem)) matchType = "제품명 기준";
+      else if (stem.length >= 4 && stockout.stem.includes(stem) && strengthsCompatible(master.productName, stockout.item.productName)) {
+        matchType = extractStrengthTokens(master.productName).length ? "제품명+용량 기준" : "제품명 기준";
+      }
       if (!matchType) continue;
       matches.push({ master, stockout: stockout.item, matchType });
       break;
@@ -373,8 +423,9 @@ function findMatches() {
 function buildMessage(date, partnerName, phone, matches) {
   const circled = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
   const lines = [
-    `🚨 [${date} / 품절 알림]`,
+    "🚨서원파마에서 품절 안내 드립니다. 대표님.",
     "",
+    `[${date} / ${partnerName} 품절 알림]`,
     `${partnerName} 관련 품절 품목: 총 ${matches.length}개`,
     "",
     divider,
@@ -384,9 +435,7 @@ function buildMessage(date, partnerName, phone, matches) {
     lines.push(
       `${circled[index] || `${index + 1}.`} ${match.master.hospitalName}`,
       `- 품목명: ${match.stockout.productName}`,
-      `- 등록 품목명: ${match.master.productName}`,
       `- 출하예정일: ${match.stockout.expectedDate || "-"}`,
-      `- 매칭 기준: ${match.matchType}`,
       "",
     );
   });
@@ -395,7 +444,27 @@ function buildMessage(date, partnerName, phone, matches) {
   return lines.join("\n");
 }
 
+function messageToHtml(text) {
+  return String(text)
+    .split("\n")
+    .map((line) => {
+      const escaped = escapeHtml(line);
+      if (/^\[\d{4}-\d{2}-\d{2} \/ .+ 품절 알림\]$/.test(line)) return `<strong>${escaped}</strong>`;
+      return escaped || "&nbsp;";
+    })
+    .join("<br>");
+}
+
 function runMatch() {
+  if (!store.masterItems.length) {
+    alert("먼저 거래처 마스터 엑셀을 업로드해 주세요.");
+    return;
+  }
+  if (!store.stockoutItems.length) {
+    alert("품절 PDF를 업로드하거나 품절 리스트를 입력해 주세요.");
+    return;
+  }
+
   const date = $("#matchDate").value || today();
   const matches = findMatches();
   const grouped = new Map();
@@ -446,15 +515,33 @@ function printText(title, text) {
         <title>${escapeHtml(title)}</title>
         <style>
           body { font-family: "Malgun Gothic", Arial, sans-serif; padding: 32px; line-height: 1.6; }
-          pre { white-space: pre-wrap; font: inherit; }
+          .message-preview { white-space: pre-wrap; font: inherit; }
         </style>
       </head>
-      <body><pre>${escapeHtml(text)}</pre></body>
+      <body><div class="message-preview">${messageToHtml(text)}</div></body>
     </html>
   `);
   win.document.close();
   win.focus();
   win.print();
+}
+
+async function copyMessage(text) {
+  const html = `<div style="white-space: pre-wrap; font-family: Malgun Gothic, Arial, sans-serif; line-height: 1.58;">${messageToHtml(text)}</div>`;
+  if (navigator.clipboard?.write && window.ClipboardItem) {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/plain": new Blob([text], { type: "text/plain" }),
+          "text/html": new Blob([html], { type: "text/html" }),
+        }),
+      ]);
+      return;
+    } catch {
+      // Some browsers or paste targets only accept plain text.
+    }
+  }
+  await navigator.clipboard.writeText(text);
 }
 
 function downloadTemplate() {
@@ -513,7 +600,7 @@ async function handlePdfUpload(input) {
     $("#stockoutUploadResult").classList.remove("hidden");
     $("#stockoutUploadResult").textContent = `품절 리스트 추출 완료: ${store.stockoutItems.length}개`;
     render();
-    switchView("stockout");
+    switchView("dashboard");
   } catch (error) {
     alert(`PDF 추출 실패: ${error.message}`);
   }
@@ -536,6 +623,7 @@ $("#manualStockoutButton").addEventListener("click", () => {
   store.results = [];
   saveStore();
   render();
+  switchView("dashboard");
 });
 
 $("#clearStockoutButton").addEventListener("click", () => {
@@ -555,7 +643,7 @@ $("#resultGrid").addEventListener("click", async (event) => {
   const result = store.results.find((item) => item.id === resultId);
   if (!result) return;
   if (copyButton) {
-    await navigator.clipboard.writeText(result.message);
+    await copyMessage(result.message);
     copyButton.textContent = "복사완료";
     setTimeout(() => (copyButton.textContent = "복사"), 1200);
   }
@@ -572,7 +660,7 @@ $("#resultGrid").addEventListener("click", async (event) => {
 $("#copyAllButton").addEventListener("click", async () => {
   const text = store.results.map((result) => result.message).join("\n\n");
   if (!text) return alert("복사할 매칭 결과가 없습니다.");
-  await navigator.clipboard.writeText(text);
+  await copyMessage(text);
   alert("전체 결과를 복사했습니다.");
 });
 
