@@ -69,7 +69,7 @@ vercel --prod --yes
 
 ## GitHub Actions 실행
 
-`.github/workflows/outofstock-alert.yml`은 매일 17:13, 17:33, 17:53 KST에 확인 실행됩니다. 중복 알림은 발송 이력으로 방지합니다.
+`.github/workflows/outofstock-alert.yml`은 매일 17:03부터 17:43 KST까지 5분 간격으로 확인 실행됩니다. 중복 알림은 발송 이력으로 방지합니다.
 
 GitHub 저장소의 `Settings > Secrets and variables > Actions`에 아래 값을 추가하세요.
 

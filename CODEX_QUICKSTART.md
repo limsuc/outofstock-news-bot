@@ -107,13 +107,13 @@ Actions > Out-of-stock alert > Run workflow
 
 ## 7. 실행 시간 바꾸기
 
-기본 실행 시간은 매일 17:13 KST입니다.
+기본 실행 시간은 매일 17:03부터 17:43 KST까지 5분 간격입니다.
 
 `.github/workflows/outofstock-alert.yml`의 cron 값을 바꾸면 됩니다.
 
 ```yaml
-# 17:13 KST = 08:13 UTC
-- cron: "13 8 * * *"
+# 17:03-17:43 KST = 08:03-08:43 UTC
+- cron: "3,8,13,18,23,28,33,38,43 8 * * *"
 ```
 
 예를 들어 매일 09:00 KST는 00:00 UTC입니다.
