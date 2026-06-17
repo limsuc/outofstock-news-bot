@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -97,18 +98,36 @@ def _has_sent_hash(db: firestore.Client, hash_value: str) -> bool:
     return _doc_ref(db, hash_value).get().exists
 
 
-def _unsent_matches(db: firestore.Client, matches: list[alert.Match]) -> list[alert.Match]:
-    return [match for match in matches if not _has_sent_hash(db, alert.alert_hash(match))]
+def _daily_match_hash(match: alert.Match, day: str) -> str:
+    payload = f"DAILY_MATCH|{day}|{alert.alert_hash(match)}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _mark_matches_sent(db: firestore.Client, matches: list[alert.Match]) -> None:
+def _unsent_matches(
+    db: firestore.Client,
+    matches: list[alert.Match],
+    day: str,
+) -> list[alert.Match]:
+    return [
+        match
+        for match in matches
+        if not _has_sent_hash(db, _daily_match_hash(match, day))
+    ]
+
+
+def _mark_matches_sent(
+    db: firestore.Client,
+    matches: list[alert.Match],
+    day: str,
+) -> None:
     now = datetime.now(KST).isoformat(timespec="seconds")
     batch = db.batch()
     for match in matches:
         batch.set(
-            _doc_ref(db, alert.alert_hash(match)),
+            _doc_ref(db, _daily_match_hash(match, day)),
             {
                 "sent_at": now,
+                "alert_day": day,
                 "product": match.product,
                 "clients": list(match.clients),
                 "matched_line": match.matched_line,
@@ -170,21 +189,27 @@ def run_cloud_alert(force_send: bool = False) -> dict[str, Any]:
         print(json.dumps(result, ensure_ascii=False))
         return result
 
-    target_matches = matches if force_send else _unsent_matches(db, matches)
+    target_matches = matches if force_send else _unsent_matches(db, matches, today)
     if not target_matches:
-        result = {**diagnostics, "sent": False, "reason": "new_matches=0"}
+        result = {
+            **diagnostics,
+            "sent": False,
+            "reason": "daily_alert_already_sent",
+            "alert_day": today,
+        }
         print(json.dumps(result, ensure_ascii=False))
         return result
 
     for message in alert.split_message(alert.format_summary(target_matches)):
         alert.send_telegram_message(token, chat_id, message)
-    _mark_matches_sent(db, target_matches)
+    _mark_matches_sent(db, target_matches, today)
 
     result = {
         **diagnostics,
         "sent": True,
         "sent_matches": len(target_matches),
         "force_send": force_send,
+        "alert_day": today,
     }
     print(json.dumps(result, ensure_ascii=False))
     return result

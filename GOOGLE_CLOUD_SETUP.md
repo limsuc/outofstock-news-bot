@@ -12,7 +12,7 @@ Cloud Run function: run_outofstock_alert
         ↓
 Google Drive 품절 PDF + sales-list.xlsx 다운로드
         ↓
-Firestore sent_alerts 컬렉션으로 중복 발송 방지
+Firestore sent_alerts 컬렉션으로 같은 날 중복 발송 방지
         ↓
 Telegram 메시지 발송
 ```
@@ -162,7 +162,7 @@ gcloud scheduler jobs run outofstock-alert-17kst --location $REGION
 gcloud functions logs read outofstock-alert --gen2 --region $REGION --limit 50
 ```
 
-정상 실행이면 로그에 `matches`, `sent`, `sent_matches`, `new_matches=0` 같은 결과가 남습니다.
+정상 실행이면 로그에 `matches`, `sent`, `sent_matches`, `daily_alert_already_sent` 같은 결과가 남습니다. 품절 매칭 결과가 전날과 같아도 매일 첫 실행에서는 알림을 보내고, 같은 날의 반복 호출만 중복 방지합니다.
 
 ## 9. GitHub Actions
 
