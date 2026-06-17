@@ -11,7 +11,7 @@
 - 매일 갱신되는 품절 PDF의 Google Drive 파일 ID
 - 내 거래처/품목 리스트 `sales-list.xlsx`의 Google Drive 파일 ID
 
-두 Google Drive 파일은 모두 "링크가 있는 모든 사용자 보기 가능"으로 공유해야 GitHub Actions가 다운로드할 수 있습니다.
+두 Google Drive 파일은 모두 "링크가 있는 모든 사용자 보기 가능"으로 공유해야 자동 실행 환경이 다운로드할 수 있습니다.
 
 ## 2. sales-list.xlsx 형식
 
@@ -52,15 +52,9 @@ https://drive.google.com/file/d/15dOI-2gYbOLEett8Jfu4OWilAytZdM26/view?usp=shari
 15dOI-2gYbOLEett8Jfu4OWilAytZdM26
 ```
 
-## 4. GitHub Secrets
+## 4. Google Cloud 환경변수
 
-fork한 저장소에서 아래 메뉴로 이동하세요.
-
-```text
-Settings > Secrets and variables > Actions > Repository secrets
-```
-
-아래 값을 추가합니다.
+Google Cloud Run function 배포 시 아래 값을 환경변수로 넣습니다.
 
 ```text
 TELEGRAM_BOT_TOKEN=내 텔레그램 봇 토큰
@@ -69,33 +63,35 @@ OUTOFSTOCK_FILE_ID=품절 PDF Google Drive 파일 ID
 SALES_LIST_FILE_ID=sales-list.xlsx Google Drive 파일 ID
 ```
 
+배포 절차는 `GOOGLE_CLOUD_SETUP.md`를 따릅니다.
+
 ## 5. Codex에 붙여넣을 프롬프트
 
 아래 문장을 Codex에 그대로 붙여넣으면 됩니다.
 
 ```text
-이 저장소는 품절 알림 봇입니다. CODEX_QUICKSTART.md와 README.md를 읽고, 내 GitHub Actions 설정이 제대로 되었는지 확인해줘.
+이 저장소는 품절 알림 봇입니다. CODEX_QUICKSTART.md, README.md, GOOGLE_CLOUD_SETUP.md를 읽고, Google Cloud Run functions + Cloud Scheduler 방식으로 배포할 수 있게 확인해줘.
 
 내가 준비한 값:
-- TELEGRAM_BOT_TOKEN: GitHub Secrets에 넣어뒀음
-- TELEGRAM_CHAT_ID: GitHub Secrets에 넣어뒀음
-- OUTOFSTOCK_FILE_ID: GitHub Secrets에 넣어뒀음
-- SALES_LIST_FILE_ID: GitHub Secrets에 넣어뒀음
+- TELEGRAM_BOT_TOKEN: 준비됨
+- TELEGRAM_CHAT_ID: 준비됨
+- OUTOFSTOCK_FILE_ID: 준비됨
+- SALES_LIST_FILE_ID: 준비됨
 
 해줘야 할 일:
 1. outofstock_alert.py 문법 검사를 해줘.
-2. GitHub Actions workflow가 매일 17:13 KST에 실행되도록 되어 있는지 확인해줘.
-3. Actions에서 수동 실행할 수 있게 되어 있는지 확인해줘.
-4. 가능하면 workflow를 실행하거나, 내가 실행할 수 있는 정확한 위치를 알려줘.
+2. main.py의 Cloud Run function 엔트리포인트가 정상인지 확인해줘.
+3. Google Cloud 배포 명령을 내 프로젝트 값에 맞춰 안내해줘.
+4. Cloud Scheduler가 17:03-17:43 KST에 5분 간격으로 실행되도록 안내해줘.
 5. 문제가 있으면 고쳐서 커밋/푸시해줘.
 ```
 
 ## 6. 수동 테스트
 
-GitHub 저장소에서 아래 위치로 이동합니다.
+Google Cloud Scheduler를 만든 뒤 아래 명령으로 즉시 실행할 수 있습니다.
 
-```text
-Actions > Out-of-stock alert > Run workflow
+```powershell
+gcloud scheduler jobs run outofstock-alert-17kst --location asia-northeast3
 ```
 
 실행 후 텔레그램으로 아래 둘 중 하나가 오면 성공입니다.
@@ -103,17 +99,17 @@ Actions > Out-of-stock alert > Run workflow
 - 매칭된 품절 품목 알림
 - `현재 거래처 품목과 매칭된 품절 품목이 없습니다.`
 
-이미 같은 결과가 한 번 발송된 뒤에는 중복 방지 때문에 수동 실행해도 메시지가 다시 오지 않을 수 있습니다. 이때는 `Run workflow` 창에서 `force_send`를 체크하고 실행하면 현재 결과를 다시 발송합니다.
+이미 같은 결과가 한 번 발송된 뒤에는 Firestore 중복 방지 때문에 다시 실행해도 메시지가 다시 오지 않을 수 있습니다.
 
 ## 7. 실행 시간 바꾸기
 
 기본 실행 시간은 매일 17:03부터 17:43 KST까지 5분 간격입니다.
 
-`.github/workflows/outofstock-alert.yml`의 cron 값을 바꾸면 됩니다.
+Cloud Scheduler의 schedule 값을 바꾸면 됩니다.
 
 ```yaml
 # 17:03-17:43 KST = 08:03-08:43 UTC
-- cron: "3,8,13,18,23,28,33,38,43 8 * * *"
+3-43/5 17 * * *
 ```
 
 예를 들어 매일 09:00 KST는 00:00 UTC입니다.

@@ -1,2 +1,4 @@
 openpyxl>=3.1.0
 pypdf>=4.0.0
+functions-framework>=3.8.0
+google-cloud-firestore>=2.20.0

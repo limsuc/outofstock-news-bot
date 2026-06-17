@@ -1,0 +1,13 @@
+.git/
+.github/
+.env
+.vercel/
+data/
+__pycache__/
+*.pyc
+outofstock-list-download-test
+sales-list.xlsx
+settlement-sample.xls
+web/
+web_app.py
+vercel.json
