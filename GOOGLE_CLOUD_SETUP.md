@@ -32,9 +32,35 @@ SALES_LIST_FILE_ID=1ZZOH5A3AzDcHEyzoOx43KwSVxeLk5XXE
 
 Google Drive 파일 2개는 "링크가 있는 모든 사용자 보기 가능"이어야 합니다.
 
-## 2. Google Cloud 초기 설정
+## 2. 자동 배포 스크립트 사용
 
-PowerShell에서 실행합니다.
+Cloud Shell에서 아래 명령을 실행하면 API 활성화, Firestore 생성, 서비스 계정 생성, 함수 배포, Cloud Scheduler 생성, 즉시 테스트 실행까지 한 번에 진행합니다.
+
+```bash
+export PROJECT_ID="outofstock-alert"
+
+git clone https://github.com/limsuc/outofstock-news-bot.git
+cd outofstock-news-bot
+
+bash scripts/deploy_google_cloud.sh
+```
+
+실행 중 `Telegram bot token:` 입력창이 나오면 텔레그램 봇 토큰을 붙여넣고 Enter를 누르세요. 입력한 토큰은 화면에 표시되지 않습니다.
+
+이미 저장소를 clone했다면 아래만 실행하면 됩니다.
+
+```bash
+cd outofstock-news-bot
+git pull
+export PROJECT_ID="outofstock-alert"
+bash scripts/deploy_google_cloud.sh
+```
+
+## 3. 수동 설정 명령
+
+스크립트 대신 직접 진행하려면 아래 명령을 순서대로 실행합니다.
+
+PowerShell 또는 Cloud Shell에서 실행합니다.
 
 ```powershell
 gcloud auth login
@@ -49,7 +75,7 @@ gcloud services enable firestore.googleapis.com
 
 Firestore는 Google Cloud Console에서 `Firestore Database`를 열고 Native mode로 데이터베이스를 만듭니다. 위치는 가능하면 `asia-northeast3`를 선택하세요.
 
-## 3. 서비스 계정 만들기
+## 4. 서비스 계정 만들기
 
 ```powershell
 $PROJECT_ID = "내 Google Cloud 프로젝트 ID"
@@ -63,7 +89,7 @@ gcloud iam service-accounts create outofstock-scheduler --display-name "Out of s
 gcloud projects add-iam-policy-binding $PROJECT_ID --member "serviceAccount:$RUNTIME_SA" --role "roles/datastore.user"
 ```
 
-## 4. 함수 배포
+## 5. 함수 배포
 
 아래 명령은 현재 폴더를 Cloud Run function으로 배포합니다.
 
@@ -91,7 +117,7 @@ $FUNCTION_URL = gcloud functions describe outofstock-alert --gen2 --region $REGI
 $FUNCTION_URL
 ```
 
-## 5. Cloud Scheduler 만들기
+## 6. Cloud Scheduler 만들기
 
 Scheduler가 함수를 호출할 수 있도록 권한을 줍니다.
 
@@ -120,7 +146,7 @@ gcloud scheduler jobs create http outofstock-alert-17kst `
   --oidc-token-audience $FUNCTION_URL
 ```
 
-## 6. 수동 테스트
+## 7. 수동 테스트
 
 Scheduler를 즉시 한 번 실행합니다.
 
@@ -130,7 +156,7 @@ gcloud scheduler jobs run outofstock-alert-17kst --location $REGION
 
 같은 결과가 이미 발송되어 다시 테스트 메시지를 받고 싶다면 함수 URL에 `force_send=true`를 붙인 별도 테스트용 Scheduler job을 만들거나, Google Cloud Console에서 Cloud Run function 로그를 확인한 뒤 Firestore의 해당 발송 이력을 삭제하고 다시 실행하세요.
 
-## 7. 로그 확인
+## 8. 로그 확인
 
 ```powershell
 gcloud functions logs read outofstock-alert --gen2 --region $REGION --limit 50
@@ -138,6 +164,6 @@ gcloud functions logs read outofstock-alert --gen2 --region $REGION --limit 50
 
 정상 실행이면 로그에 `matches`, `sent`, `sent_matches`, `new_matches=0` 같은 결과가 남습니다.
 
-## 8. GitHub Actions
+## 9. GitHub Actions
 
 GitHub Actions workflow는 이제 수동 테스트용입니다. 자동 실행은 Cloud Scheduler가 담당합니다.

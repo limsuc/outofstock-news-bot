@@ -73,6 +73,15 @@ vercel --prod --yes
 
 배포 절차는 [GOOGLE_CLOUD_SETUP.md](GOOGLE_CLOUD_SETUP.md)를 참고하세요.
 
+Cloud Shell에서 빠르게 배포하려면:
+
+```bash
+export PROJECT_ID="outofstock-alert"
+git clone https://github.com/limsuc/outofstock-news-bot.git
+cd outofstock-news-bot
+bash scripts/deploy_google_cloud.sh
+```
+
 필요한 Google Cloud 환경변수:
 
 - `TELEGRAM_BOT_TOKEN` 텔레그램 봇 토큰
