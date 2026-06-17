@@ -193,6 +193,7 @@ function renderResults() {
     node.querySelector(".report-count").textContent = `${result.items.length}건`;
     node.querySelector(".message-preview").innerHTML = messageToHtml(result.message);
     node.querySelector(".copy-button").dataset.resultId = result.id;
+    node.querySelector(".image-button").dataset.resultId = result.id;
     node.querySelector(".print-button").dataset.resultId = result.id;
     node.querySelector(".done-button").dataset.resultId = result.id;
     node.querySelector(".done-button").textContent = result.status === "done" ? "전달완료됨" : "전달완료";
@@ -543,6 +544,122 @@ async function copyMessage(text) {
   await navigator.clipboard.writeText(text);
 }
 
+function canvasTextLines(ctx, text, maxWidth) {
+  if (!text) return [""];
+  const chars = Array.from(text);
+  const lines = [];
+  let line = "";
+  for (const char of chars) {
+    const next = `${line}${char}`;
+    if (line && ctx.measureText(next).width > maxWidth) {
+      lines.push(line);
+      line = char;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+async function resultImageBlob(result) {
+  if (document.fonts?.ready) await document.fonts.ready;
+
+  const width = 900;
+  const scale = 2;
+  const padding = 44;
+  const lineHeight = 31;
+  const contentWidth = width - padding * 2;
+  const fontFamily = '"Malgun Gothic", "Segoe UI", Arial, sans-serif';
+  const headerRe = /^\[\d{4}-\d{2}-\d{2} \/ .+ 품절 알림\]$/;
+
+  const measureCanvas = document.createElement("canvas");
+  const measureCtx = measureCanvas.getContext("2d");
+  const rows = [];
+
+  for (const rawLine of result.message.split("\n")) {
+    if (!rawLine) {
+      rows.push({ type: "space", height: 15 });
+      continue;
+    }
+    if (rawLine.includes("━")) {
+      rows.push({ type: "divider", height: 24 });
+      continue;
+    }
+    const bold = headerRe.test(rawLine) || rawLine.startsWith("🚨");
+    measureCtx.font = `${bold ? "700" : "400"} 23px ${fontFamily}`;
+    for (const line of canvasTextLines(measureCtx, rawLine, contentWidth)) {
+      rows.push({ type: "text", text: line, bold, height: lineHeight });
+    }
+  }
+
+  const height = Math.max(360, padding * 2 + 18 + rows.reduce((sum, row) => sum + row.height, 0));
+  const canvas = document.createElement("canvas");
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#176b87";
+  ctx.fillRect(0, 0, width, 12);
+  ctx.strokeStyle = "#dbe2ea";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, width - 2, height - 2);
+
+  let y = padding + 8;
+  for (const row of rows) {
+    if (row.type === "space") {
+      y += row.height;
+      continue;
+    }
+    if (row.type === "divider") {
+      ctx.strokeStyle = "#cfd8e3";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(padding, y + 10);
+      ctx.lineTo(width - padding, y + 10);
+      ctx.stroke();
+      y += row.height;
+      continue;
+    }
+    ctx.font = `${row.bold ? "700" : "400"} 23px ${fontFamily}`;
+    ctx.fillStyle = row.bold ? "#102938" : "#1f2933";
+    ctx.fillText(row.text, padding, y + 24);
+    y += row.height;
+  }
+
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.96));
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+async function copyResultImage(result) {
+  const blob = await resultImageBlob(result);
+  if (!blob) throw new Error("PNG 이미지를 만들 수 없습니다.");
+  const filename = `${result.partnerName}_품절알림_${result.date}.png`.replace(/[\\/:*?"<>|]/g, "_");
+
+  if (navigator.clipboard?.write && window.ClipboardItem) {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      return "copied";
+    } catch {
+      // Fall back to a PNG download when image clipboard is blocked.
+    }
+  }
+
+  downloadBlob(blob, filename);
+  return "downloaded";
+}
+
 function downloadTemplate() {
   const csv = "\ufeff사업자명,연락처,담당자명,병의원명,제품명,메모\n에스팜,010-0000-0000,김대표,수이비인후과,브로나제장용정,\n에스팜,010-0000-0000,김대표,박영준내과,페북트정40mg,\n";
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -634,9 +751,10 @@ $("#clearStockoutButton").addEventListener("click", () => {
 
 $("#resultGrid").addEventListener("click", async (event) => {
   const copyButton = event.target.closest(".copy-button");
+  const imageButton = event.target.closest(".image-button");
   const printButton = event.target.closest(".print-button");
   const doneButton = event.target.closest(".done-button");
-  const resultId = copyButton?.dataset.resultId || printButton?.dataset.resultId || doneButton?.dataset.resultId;
+  const resultId = copyButton?.dataset.resultId || imageButton?.dataset.resultId || printButton?.dataset.resultId || doneButton?.dataset.resultId;
   if (!resultId) return;
   const result = store.results.find((item) => item.id === resultId);
   if (!result) return;
@@ -644,6 +762,22 @@ $("#resultGrid").addEventListener("click", async (event) => {
     await copyMessage(result.message);
     copyButton.textContent = "복사완료";
     setTimeout(() => (copyButton.textContent = "복사"), 1200);
+  }
+  if (imageButton) {
+    imageButton.disabled = true;
+    imageButton.textContent = "이미지 생성중";
+    try {
+      const action = await copyResultImage(result);
+      imageButton.textContent = action === "copied" ? "이미지복사완료" : "이미지저장완료";
+    } catch (error) {
+      alert(`이미지 생성 실패: ${error.message}`);
+      imageButton.textContent = "카톡용 이미지";
+    } finally {
+      setTimeout(() => {
+        imageButton.disabled = false;
+        imageButton.textContent = "카톡용 이미지";
+      }, 1600);
+    }
   }
   if (printButton) printText(`${result.partnerName} 품절 리포트`, result.message);
   if (doneButton) {
