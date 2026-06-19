@@ -333,41 +333,25 @@ async function parsePdfStockouts(file) {
   const pdfjsLib = await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs");
   pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs";
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
-  const stockouts = [];
-  const stopRe = /(기본|기존|추가|프로모션|기간|대상|수수료|요율|전략|지급|신규|매출|처방시)/;
+  const pageFragments = [];
 
   for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
     const page = await pdf.getPage(pageNo);
     const text = await page.getTextContent();
-    const fragments = text.items
-      .map((item) => ({ text: clean(item.str), x: item.transform[4], y: item.transform[5] }))
-      .filter((item) => item.text && item.y > 0)
-      .sort((a, b) => b.y - a.y || a.x - b.x);
-
-    const groupedRows = [];
-    for (const fragment of fragments) {
-      const last = groupedRows[groupedRows.length - 1];
-      if (!last || Math.abs(last[0].y - fragment.y) > 3) groupedRows.push([fragment]);
-      else last.push(fragment);
-    }
-
-    let started = false;
-    for (const row of groupedRows) {
-      const combined = row.map((item) => item.text).join(" ");
-      if (combined.includes("제약사명") && (combined.includes("제품명") || combined.includes("출하"))) {
-        started = true;
-        continue;
-      }
-      if (!started) continue;
-      const productName = row.filter((item) => item.x >= 55 && item.x < 335).map((item) => item.text).join(" ").trim();
-      const expectedDate = row.filter((item) => item.x >= 335).map((item) => item.text).join(" ").trim();
-      if (!productName) continue;
-      if (stopRe.test(`${productName} ${expectedDate}`)) break;
-      if (["제품명", "내용", "출하 예정일"].includes(productName)) continue;
-      stockouts.push({ id: id(), productName, expectedDate: expectedDate || "-" });
-    }
+    pageFragments.push(
+      text.items.map((item) => ({
+        text: clean(item.str),
+        x: item.transform[4],
+        y: item.transform[5],
+      })),
+    );
   }
-  return dedupeStockouts(stockouts);
+
+  if (!window.StockoutPdfParser) throw new Error("PDF 형식 분석기를 불러오지 못했습니다.");
+  const parsed = window.StockoutPdfParser.parsePages(pageFragments);
+  const items = dedupeStockouts(parsed.items.map((item) => ({ id: id(), ...item })));
+  if (!items.length) throw new Error("품절 품목을 찾지 못했습니다. PDF 형식을 확인해 주세요.");
+  return { items, layoutLabel: parsed.layoutLabel };
 }
 
 function dedupeStockouts(items) {
@@ -709,11 +693,12 @@ async function handlePdfUpload(input) {
   const file = input.files[0];
   if (!file) return alert("품절 PDF 파일을 선택해 주세요.");
   try {
-    store.stockoutItems = await parsePdfStockouts(file);
+    const parsed = await parsePdfStockouts(file);
+    store.stockoutItems = parsed.items;
     store.results = [];
     saveStore();
     $("#stockoutUploadResult").classList.remove("hidden");
-    $("#stockoutUploadResult").textContent = `품절 리스트 추출 완료: ${store.stockoutItems.length}개`;
+    $("#stockoutUploadResult").textContent = `품절 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel}`;
     render();
     switchView("dashboard");
   } catch (error) {
