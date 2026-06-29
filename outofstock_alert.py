@@ -41,6 +41,7 @@ class SalesItem:
 
 @dataclass(frozen=True)
 class StockoutItem:
+    company: str
     product: str
     expected_date: str
 
@@ -209,6 +210,8 @@ def stockout_candidate_lines(pdf_path: Path) -> list[StockoutItem]:
                 rows[-1].append((y, x, text))
 
         page_started = False
+        current_company = ""
+        pending_company_items: list[int] = []
         for row in rows:
             texts = [text for _, _, text in row]
             combined = " ".join(texts)
@@ -218,10 +221,24 @@ def stockout_candidate_lines(pdf_path: Path) -> list[StockoutItem]:
             if not page_started:
                 continue
 
-            product_parts = [text for _, x, text in row if 65 <= x < 335]
+            company_parts = [text for _, x, text in row if 0 <= x < 70]
+            product_parts = [text for _, x, text in row if 70 <= x < 335]
             expected_parts = [text for _, x, text in row if x >= 335]
+            company = " ".join(company_parts).strip()
             product = " ".join(product_parts).strip()
             expected_date = " ".join(expected_parts).strip()
+
+            if company:
+                if not current_company:
+                    for item_index in pending_company_items:
+                        pending_item = candidates[item_index]
+                        candidates[item_index] = StockoutItem(
+                            company=company,
+                            product=pending_item.product,
+                            expected_date=pending_item.expected_date,
+                        )
+                    pending_company_items.clear()
+                current_company = company
 
             if not product:
                 continue
@@ -229,7 +246,15 @@ def stockout_candidate_lines(pdf_path: Path) -> list[StockoutItem]:
                 break
             if product in {"출하 예정일", "내용", "제품명"}:
                 continue
-            candidates.append(StockoutItem(product=product, expected_date=expected_date or "-"))
+            candidates.append(
+                StockoutItem(
+                    company=company or current_company,
+                    product=product,
+                    expected_date=expected_date or "-",
+                )
+            )
+            if not candidates[-1].company:
+                pending_company_items.append(len(candidates) - 1)
     return candidates
 
 
@@ -308,7 +333,7 @@ def find_matches(sales_items: list[SalesItem], stockout_items: list[StockoutItem
             Match(
                 product=product,
                 clients=tuple(sorted(str(client) for client in clients)),
-                maker=str(entry["maker"] or ""),
+                maker=matched_stockout.company or str(entry["maker"] or ""),
                 matched_line=found_line,
                 expected_date=matched_stockout.expected_date,
                 match_type=match_type,
@@ -438,6 +463,7 @@ def format_summary(matches: list[Match], limit: int = 20) -> str:
             [
                 f"{number} {match.product}",
                 f"- 거래처: {clients}",
+                f"- 제약사명: {match.maker or '-'}",
                 f"- 품목명: {match.matched_line}",
                 f"- 출하예정일: {match.expected_date}",
                 f"- 매칭 기준: {match.match_type}",
