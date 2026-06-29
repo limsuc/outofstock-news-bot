@@ -167,13 +167,14 @@ function renderStockoutTable() {
         .map(
           (item) => `
             <tr>
+              <td>${escapeHtml(item.company || "-")}</td>
               <td>${escapeHtml(item.productName)}</td>
               <td>${escapeHtml(item.expectedDate || "-")}</td>
             </tr>
           `,
         )
         .join("")
-    : `<tr><td colspan="2">품절 PDF를 업로드하거나 붙여넣기로 입력해 주세요.</td></tr>`;
+    : `<tr><td colspan="3">품절 PDF를 업로드하거나 붙여넣기로 입력해 주세요.</td></tr>`;
 }
 
 function renderResults() {
@@ -370,8 +371,13 @@ function parseManualStockouts(text) {
       .map((line) => clean(line))
       .filter(Boolean)
       .map((line) => {
-        const [productName, expectedDate] = line.split("|").map(clean);
-        return { id: id(), productName, expectedDate: expectedDate || "-" };
+        const parts = line.split("|").map(clean);
+        if (parts.length >= 3) {
+          const [company, productName, expectedDate] = parts;
+          return { id: id(), company, productName, expectedDate: expectedDate || "-" };
+        }
+        const [productName, expectedDate] = parts;
+        return { id: id(), company: "", productName, expectedDate: expectedDate || "-" };
       })
       .filter((item) => item.productName),
   );
@@ -418,6 +424,7 @@ function buildMessage(date, partnerName, phone, matches) {
   matches.forEach((match, index) => {
     lines.push(
       `${circled[index] || `${index + 1}.`} ${match.master.hospitalName}`,
+      `- 제약사명: ${match.stockout.company || "-"}`,
       `- 품목명: ${match.stockout.productName}`,
       `- 출하예정일: ${match.stockout.expectedDate || "-"}`,
       "",
@@ -475,6 +482,7 @@ function runMatch() {
       createdAt: new Date().toISOString(),
       items: group.matches.map((match) => ({
         hospitalName: match.master.hospitalName,
+        company: match.stockout.company || "",
         productName: match.stockout.productName,
         registeredProductName: match.master.productName,
         expectedDate: match.stockout.expectedDate,

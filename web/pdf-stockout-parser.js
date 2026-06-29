@@ -76,6 +76,7 @@
         if (RELEASE_RE.test(`${parsed.expectedDate} ${parsed.note}`)) continue;
 
         items.push({
+          company: parsed.company,
           productName: parsed.productName,
           expectedDate: parsed.expectedDate || "-",
         });
@@ -96,12 +97,13 @@
         }
         if (!started) continue;
 
+        const company = columnText(row, 0, 55);
         const productName = columnText(row, 55, 335);
         const expectedDate = columnText(row, 335);
         if (!productName) continue;
         if (LEGACY_STOP_RE.test(`${productName} ${expectedDate}`)) break;
         if (["제품명", "내용", "출하 예정일"].includes(productName)) continue;
-        items.push({ productName, expectedDate: expectedDate || "-" });
+        items.push({ company, productName, expectedDate: expectedDate || "-" });
       }
     }
     return items;
