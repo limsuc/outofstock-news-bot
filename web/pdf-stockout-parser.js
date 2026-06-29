@@ -67,19 +67,34 @@
   function parseDistributionPages(pages) {
     const items = [];
     for (const rows of pages) {
+      let currentCompany = "";
+      const pendingCompanyItems = [];
+
       for (const row of rows) {
         const parsed = distributionRow(row);
-        if (!parsed.company || !parsed.productName || !parsed.expectedDate) continue;
-
         const combined = `${parsed.company} ${parsed.productName} ${parsed.expectedDate} ${parsed.note}`;
         if (/제약사명|제품명|입고\s*예정일|공지사항|유통현황/.test(combined)) continue;
+
+        if (parsed.company) {
+          if (!currentCompany) {
+            pendingCompanyItems.forEach((item) => {
+              item.company = parsed.company;
+            });
+            pendingCompanyItems.length = 0;
+          }
+          currentCompany = parsed.company;
+        }
+
+        if (!parsed.productName || !parsed.expectedDate) continue;
         if (RELEASE_RE.test(`${parsed.expectedDate} ${parsed.note}`)) continue;
 
-        items.push({
-          company: parsed.company,
+        const item = {
+          company: parsed.company || currentCompany,
           productName: parsed.productName,
           expectedDate: parsed.expectedDate || "-",
-        });
+        };
+        items.push(item);
+        if (!item.company) pendingCompanyItems.push(item);
       }
     }
     return items;
@@ -89,6 +104,9 @@
     const items = [];
     for (const rows of pages) {
       let started = false;
+      let currentCompany = "";
+      const pendingCompanyItems = [];
+
       for (const row of rows) {
         const combined = row.map((item) => item.text).join(" ");
         if (combined.includes("제약사명") && (combined.includes("제품명") || combined.includes("출하"))) {
@@ -97,13 +115,31 @@
         }
         if (!started) continue;
 
-        const company = columnText(row, 0, 55);
-        const productName = columnText(row, 55, 335);
+        const company = columnText(row, 0, 70);
+        const productName = columnText(row, 70, 335);
         const expectedDate = columnText(row, 335);
-        if (!productName) continue;
         if (LEGACY_STOP_RE.test(`${productName} ${expectedDate}`)) break;
         if (["제품명", "내용", "출하 예정일"].includes(productName)) continue;
-        items.push({ company, productName, expectedDate: expectedDate || "-" });
+
+        if (company) {
+          if (!currentCompany) {
+            pendingCompanyItems.forEach((item) => {
+              item.company = company;
+            });
+            pendingCompanyItems.length = 0;
+          }
+          currentCompany = company;
+        }
+
+        if (!productName) continue;
+
+        const item = {
+          company: company || currentCompany,
+          productName,
+          expectedDate: expectedDate || "-",
+        };
+        items.push(item);
+        if (!item.company) pendingCompanyItems.push(item);
       }
     }
     return items;
