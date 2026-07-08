@@ -358,6 +358,17 @@ p {
   white-space: nowrap;
 }
 
+.category-badge {
+  display: inline-block;
+  border-radius: 999px;
+  background: #eaf3f6;
+  color: var(--primary-dark);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .muted-badge {
   background: #eef1f4;
   color: var(--muted);

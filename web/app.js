@@ -80,6 +80,24 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function itemCategory(item) {
+  return item.category || "품절";
+}
+
+function categoryDetailLabel(category) {
+  if (category === "정산중단") return "정산중단일";
+  if (category === "요율변경") return "적용시점";
+  return "출하예정일";
+}
+
+function itemDetail(item) {
+  if (itemCategory(item) === "요율변경") {
+    const rate = [item.previousRate, item.nextRate].filter(Boolean).join(" → ");
+    return [rate, item.expectedDate].filter(Boolean).join(" / ") || "-";
+  }
+  return item.expectedDate || "-";
+}
+
 function switchView(viewId) {
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
   document.querySelectorAll(".nav-button").forEach((button) => button.classList.remove("active"));
@@ -167,20 +185,21 @@ function renderStockoutTable() {
         .map(
           (item) => `
             <tr>
+              <td><span class="category-badge">${escapeHtml(itemCategory(item))}</span></td>
               <td>${escapeHtml(item.company || "-")}</td>
               <td>${escapeHtml(item.productName)}</td>
-              <td>${escapeHtml(item.expectedDate || "-")}</td>
+              <td>${escapeHtml(itemDetail(item))}</td>
             </tr>
           `,
         )
         .join("")
-    : `<tr><td colspan="3">품절 PDF를 업로드하거나 붙여넣기로 입력해 주세요.</td></tr>`;
+    : `<tr><td colspan="4">공지 PDF를 업로드하거나 붙여넣기로 입력해 주세요.</td></tr>`;
 }
 
 function renderResults() {
   const grid = $("#resultGrid");
   if (!store.results.length) {
-    grid.innerHTML = `<section class="panel empty-state">아직 품절 매칭 결과가 없습니다. 마스터와 품절 리스트를 올린 뒤 매칭 실행을 눌러주세요.</section>`;
+    grid.innerHTML = `<section class="panel empty-state">아직 공지 매칭 결과가 없습니다. 마스터와 공지 리스트를 올린 뒤 매칭 실행을 눌러주세요.</section>`;
     return;
   }
 
@@ -358,7 +377,7 @@ async function parsePdfStockouts(file) {
 function dedupeStockouts(items) {
   const map = new Map();
   for (const item of items) {
-    const key = normalizeProduct(item.productName);
+    const key = `${itemCategory(item)}|${normalizeProduct(item.productName)}`;
     if (key && !map.has(key)) map.set(key, item);
   }
   return [...map.values()];
@@ -372,12 +391,16 @@ function parseManualStockouts(text) {
       .filter(Boolean)
       .map((line) => {
         const parts = line.split("|").map(clean);
+        if (parts.length >= 4) {
+          const [category, company, productName, expectedDate] = parts;
+          return { id: id(), category: category || "품절", company, productName, expectedDate: expectedDate || "-" };
+        }
         if (parts.length >= 3) {
           const [company, productName, expectedDate] = parts;
-          return { id: id(), company, productName, expectedDate: expectedDate || "-" };
+          return { id: id(), category: "품절", company, productName, expectedDate: expectedDate || "-" };
         }
         const [productName, expectedDate] = parts;
-        return { id: id(), company: "", productName, expectedDate: expectedDate || "-" };
+        return { id: id(), category: "품절", company: "", productName, expectedDate: expectedDate || "-" };
       })
       .filter((item) => item.productName),
   );
@@ -412,26 +435,43 @@ function findMatches() {
 
 function buildMessage(date, partnerName, phone, matches) {
   const circled = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
+  const categories = ["품절", "정산중단", "요율변경"];
+  const categoryCounts = categories
+    .map((category) => {
+      const count = matches.filter((match) => itemCategory(match.stockout) === category).length;
+      return count ? `${category} ${count}개` : "";
+    })
+    .filter(Boolean)
+    .join(", ");
   const lines = [
-    "🚨서원파마에서 품절 안내 드립니다. 대표님.",
+    "🚨서원파마에서 품절/정산중단/요율변경 안내 드립니다. 대표님.",
     "",
-    `[${date} / ${partnerName} 품절 알림]`,
-    `${partnerName} 관련 품절 품목: 총 ${matches.length}개`,
+    `[${date} / ${partnerName} 공지 알림]`,
+    `${partnerName} 관련 공지 품목: 총 ${matches.length}개${categoryCounts ? ` (${categoryCounts})` : ""}`,
     "",
     divider,
   ];
 
-  matches.forEach((match, index) => {
-    lines.push(
-      `${circled[index] || `${index + 1}.`} ${match.master.hospitalName}`,
-      `- 제약사명: ${match.stockout.company || "-"}`,
-      `- 품목명: ${match.stockout.productName}`,
-      `- 출하예정일: ${match.stockout.expectedDate || "-"}`,
-      "",
-    );
-  });
+  for (const category of categories) {
+    const categoryMatches = matches.filter((match) => itemCategory(match.stockout) === category);
+    if (!categoryMatches.length) continue;
+    lines.push(`[${category}]`);
+    categoryMatches.forEach((match, index) => {
+      lines.push(
+        `${circled[index] || `${index + 1}.`} ${match.master.hospitalName}`,
+        `- 제약사명: ${match.stockout.company || "-"}`,
+        `- 품목명: ${match.stockout.productName}`,
+      );
+      if (category === "요율변경") {
+        lines.push(`- 변경요율: ${match.stockout.previousRate || "-"} → ${match.stockout.nextRate || "-"}`);
+      }
+      lines.push(`- ${categoryDetailLabel(category)}: ${match.stockout.expectedDate || "-"}`);
+      if (match.stockout.note) lines.push(`- 비고: ${match.stockout.note}`);
+      lines.push("");
+    });
+  }
 
-  lines.push(divider, "", "거래처별 재고 및 대체 가능 여부 확인 부탁드립니다.");
+  lines.push(divider, "", "거래처별 품목 확인 부탁드립니다.");
   return lines.join("\n");
 }
 
@@ -440,7 +480,9 @@ function messageToHtml(text) {
     .split("\n")
     .map((line) => {
       const escaped = escapeHtml(line);
-      if (/^\[\d{4}-\d{2}-\d{2} \/ .+ 품절 알림\]$/.test(line)) return `<strong>${escaped}</strong>`;
+      if (/^\[\d{4}-\d{2}-\d{2} \/ .+ (품절|공지) 알림\]$/.test(line) || /^\[(품절|정산중단|요율변경)\]$/.test(line)) {
+        return `<strong>${escaped}</strong>`;
+      }
       return escaped || "&nbsp;";
     })
     .join("<br>");
@@ -452,7 +494,7 @@ function runMatch() {
     return;
   }
   if (!store.stockoutItems.length) {
-    alert("품절 PDF를 업로드하거나 품절 리스트를 입력해 주세요.");
+    alert("공지 PDF를 업로드하거나 공지 리스트를 입력해 주세요.");
     return;
   }
 
@@ -486,6 +528,10 @@ function runMatch() {
         productName: match.stockout.productName,
         registeredProductName: match.master.productName,
         expectedDate: match.stockout.expectedDate,
+        category: itemCategory(match.stockout),
+        previousRate: match.stockout.previousRate || "",
+        nextRate: match.stockout.nextRate || "",
+        note: match.stockout.note || "",
         matchType: match.matchType,
       })),
       message: buildMessage(date, group.partnerName, group.phone, group.matches),
@@ -563,7 +609,8 @@ async function resultImageBlob(result) {
   const lineHeight = 31;
   const contentWidth = width - padding * 2;
   const fontFamily = '"Malgun Gothic", "Segoe UI", Arial, sans-serif';
-  const headerRe = /^\[\d{4}-\d{2}-\d{2} \/ .+ 품절 알림\]$/;
+  const headerRe = /^\[\d{4}-\d{2}-\d{2} \/ .+ (품절|공지) 알림\]$/;
+  const categoryRe = /^\[(품절|정산중단|요율변경)\]$/;
 
   const measureCanvas = document.createElement("canvas");
   const measureCtx = measureCanvas.getContext("2d");
@@ -578,7 +625,7 @@ async function resultImageBlob(result) {
       rows.push({ type: "divider", height: 24 });
       continue;
     }
-    const bold = headerRe.test(rawLine) || rawLine.startsWith("🚨");
+    const bold = headerRe.test(rawLine) || categoryRe.test(rawLine) || rawLine.startsWith("🚨");
     measureCtx.font = `${bold ? "700" : "400"} 23px ${fontFamily}`;
     for (const line of canvasTextLines(measureCtx, rawLine, contentWidth)) {
       rows.push({ type: "text", text: line, bold, height: lineHeight });
@@ -637,7 +684,7 @@ function downloadBlob(blob, filename) {
 async function copyResultImage(result) {
   const blob = await resultImageBlob(result);
   if (!blob) throw new Error("PNG 이미지를 만들 수 없습니다.");
-  const filename = `${result.partnerName}_품절알림_${result.date}.png`.replace(/[\\/:*?"<>|]/g, "_");
+  const filename = `${result.partnerName}_공지알림_${result.date}.png`.replace(/[\\/:*?"<>|]/g, "_");
 
   if (navigator.clipboard?.write && window.ClipboardItem) {
     try {
@@ -699,14 +746,14 @@ $("#masterUploadForm").addEventListener("submit", async (event) => {
 
 async function handlePdfUpload(input) {
   const file = input.files[0];
-  if (!file) return alert("품절 PDF 파일을 선택해 주세요.");
+  if (!file) return alert("공지 PDF 파일을 선택해 주세요.");
   try {
     const parsed = await parsePdfStockouts(file);
     store.stockoutItems = parsed.items;
     store.results = [];
     saveStore();
     $("#stockoutUploadResult").classList.remove("hidden");
-    $("#stockoutUploadResult").textContent = `품절 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel}`;
+    $("#stockoutUploadResult").textContent = `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel}`;
     render();
     switchView("dashboard");
   } catch (error) {
@@ -726,7 +773,7 @@ $("#stockoutPdfFormSecondary").addEventListener("submit", (event) => {
 
 $("#manualStockoutButton").addEventListener("click", () => {
   const items = parseManualStockouts($("#manualStockoutText").value);
-  if (!items.length) return alert("품절 품목을 입력해 주세요.");
+  if (!items.length) return alert("공지 품목을 입력해 주세요.");
   store.stockoutItems = items;
   store.results = [];
   saveStore();
@@ -735,7 +782,7 @@ $("#manualStockoutButton").addEventListener("click", () => {
 });
 
 $("#clearStockoutButton").addEventListener("click", () => {
-  if (!confirm("현재 품절 리스트를 비울까요?")) return;
+  if (!confirm("현재 공지 리스트를 비울까요?")) return;
   store.stockoutItems = [];
   store.results = [];
   saveStore();
@@ -772,7 +819,7 @@ $("#resultGrid").addEventListener("click", async (event) => {
       }, 1600);
     }
   }
-  if (printButton) printText(`${result.partnerName} 품절 리포트`, result.message);
+  if (printButton) printText(`${result.partnerName} 공지 리포트`, result.message);
   if (doneButton) {
     result.status = "done";
     const history = store.history.find((entry) => entry.id === result.id);
@@ -792,7 +839,7 @@ $("#copyAllButton").addEventListener("click", async () => {
 $("#printAllButton").addEventListener("click", () => {
   const text = store.results.map((result) => result.message).join("\n\n");
   if (!text) return alert("출력할 매칭 결과가 없습니다.");
-  printText("사업자별 품절 매칭 전체 결과", text);
+  printText("사업자별 공지 매칭 전체 결과", text);
 });
 
 $("#exportButton").addEventListener("click", () => {
@@ -800,7 +847,7 @@ $("#exportButton").addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `품절매칭_백업_${today()}.json`;
+  anchor.download = `공지매칭_백업_${today()}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
 });

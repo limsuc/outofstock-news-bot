@@ -42,6 +42,40 @@
     };
   }
 
+  function rateChangeRow(row) {
+    return {
+      company: columnText(row, 0, 90),
+      productName: columnText(row, 90, 285),
+      previousRate: columnText(row, 285, 380),
+      nextRate: columnText(row, 380, 470),
+      effectiveDate: columnText(row, 470),
+    };
+  }
+
+  function settlementStopRow(row) {
+    return {
+      company: columnText(row, 0, 90),
+      productName: columnText(row, 90, 285),
+      expectedDate: columnText(row, 285, 360),
+      note: columnText(row, 360),
+    };
+  }
+
+  function pageCategory(rows) {
+    for (const row of rows) {
+      const text = row.map((item) => item.text).join(" ");
+      if (/요율변경\s*공지|변경전.*변경\s*후.*적용시점/.test(text)) return "요율변경";
+      if (/정산중단\s*공지|정산중단일/.test(text)) return "정산중단";
+    }
+    return "품절";
+  }
+
+  function isNoticeHeader(text) {
+    return /제약사명|제품명|입고\s*예정일|출하\s*예정일|정산중단일|변경전|변경\s*후|적용시점|공지사항|유통현황|품절공지|정산중단\s*공지|요율변경\s*공지/.test(
+      text,
+    );
+  }
+
   function detectLayout(pages) {
     let distributionRows = 0;
     let legacyHeaders = 0;
@@ -67,13 +101,17 @@
   function parseDistributionPages(pages) {
     const items = [];
     for (const rows of pages) {
+      const category = pageCategory(rows);
       let currentCompany = "";
       const pendingCompanyItems = [];
 
       for (const row of rows) {
-        const parsed = distributionRow(row);
-        const combined = `${parsed.company} ${parsed.productName} ${parsed.expectedDate} ${parsed.note}`;
-        if (/제약사명|제품명|입고\s*예정일|공지사항|유통현황/.test(combined)) continue;
+        const parsed = category === "요율변경" ? rateChangeRow(row) : category === "정산중단" ? settlementStopRow(row) : distributionRow(row);
+        const combined =
+          category === "요율변경"
+            ? `${parsed.company} ${parsed.productName} ${parsed.previousRate} ${parsed.nextRate} ${parsed.effectiveDate}`
+            : `${parsed.company} ${parsed.productName} ${parsed.expectedDate} ${parsed.note}`;
+        if (isNoticeHeader(combined)) continue;
 
         if (parsed.company) {
           if (!currentCompany) {
@@ -85,14 +123,27 @@
           currentCompany = parsed.company;
         }
 
-        if (!parsed.productName || !parsed.expectedDate) continue;
-        if (RELEASE_RE.test(`${parsed.expectedDate} ${parsed.note}`)) continue;
+        if (!parsed.productName) continue;
+        if (category !== "요율변경" && !parsed.expectedDate) continue;
+        if (category === "품절" && RELEASE_RE.test(`${parsed.expectedDate} ${parsed.note}`)) continue;
 
-        const item = {
-          company: parsed.company || currentCompany,
-          productName: parsed.productName,
-          expectedDate: parsed.expectedDate || "-",
-        };
+        const item =
+          category === "요율변경"
+            ? {
+                category,
+                company: parsed.company || currentCompany,
+                productName: parsed.productName,
+                expectedDate: parsed.effectiveDate || "-",
+                previousRate: parsed.previousRate || "-",
+                nextRate: parsed.nextRate || "-",
+              }
+            : {
+                category,
+                company: parsed.company || currentCompany,
+                productName: parsed.productName,
+                expectedDate: parsed.expectedDate || "-",
+                note: parsed.note || "",
+              };
         items.push(item);
         if (!item.company) pendingCompanyItems.push(item);
       }
@@ -134,6 +185,7 @@
         if (!productName) continue;
 
         const item = {
+          category: "품절",
           company: company || currentCompany,
           productName,
           expectedDate: expectedDate || "-",
@@ -151,7 +203,7 @@
     const items = layout === "distribution" ? parseDistributionPages(pages) : parseLegacyPages(pages);
     return {
       layout,
-      layoutLabel: layout === "distribution" ? "제약사별 유통현황 형식" : "기존 품절리스트 형식",
+      layoutLabel: layout === "distribution" ? "제약사별 공지 형식" : "기존 품절리스트 형식",
       items,
     };
   }
