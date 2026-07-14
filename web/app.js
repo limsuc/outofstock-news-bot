@@ -213,6 +213,7 @@ function renderResults() {
     node.querySelector(".report-count").textContent = `${result.items.length}건`;
     node.querySelector(".message-preview").innerHTML = messageToHtml(result.message);
     node.querySelector(".partner-copy-button").dataset.resultId = result.id;
+    node.querySelector(".phone-copy-button").dataset.resultId = result.id;
     node.querySelector(".copy-button").dataset.resultId = result.id;
     node.querySelector(".image-button").dataset.resultId = result.id;
     node.querySelector(".print-button").dataset.resultId = result.id;
@@ -792,12 +793,14 @@ $("#clearStockoutButton").addEventListener("click", () => {
 
 $("#resultGrid").addEventListener("click", async (event) => {
   const partnerCopyButton = event.target.closest(".partner-copy-button");
+  const phoneCopyButton = event.target.closest(".phone-copy-button");
   const copyButton = event.target.closest(".copy-button");
   const imageButton = event.target.closest(".image-button");
   const printButton = event.target.closest(".print-button");
   const doneButton = event.target.closest(".done-button");
   const resultId =
     partnerCopyButton?.dataset.resultId ||
+    phoneCopyButton?.dataset.resultId ||
     copyButton?.dataset.resultId ||
     imageButton?.dataset.resultId ||
     printButton?.dataset.resultId ||
@@ -809,6 +812,12 @@ $("#resultGrid").addEventListener("click", async (event) => {
     await copyMessage(result.partnerName);
     partnerCopyButton.textContent = "복사완료";
     setTimeout(() => (partnerCopyButton.textContent = "사업자명복사"), 1200);
+  }
+  if (phoneCopyButton) {
+    if (!result.phone) return alert("등록된 연락처가 없습니다.");
+    await copyMessage(result.phone);
+    phoneCopyButton.textContent = "복사완료";
+    setTimeout(() => (phoneCopyButton.textContent = "연락처복사"), 1200);
   }
   if (copyButton) {
     await copyMessage(result.message);
