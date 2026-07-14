@@ -836,6 +836,13 @@ $("#copyAllButton").addEventListener("click", async () => {
   alert("전체 결과를 복사했습니다.");
 });
 
+$("#copyPartnerNamesButton").addEventListener("click", async () => {
+  const names = [...new Set(store.results.map((result) => result.partnerName).filter(Boolean))];
+  if (!names.length) return alert("복사할 사업자명이 없습니다.");
+  await copyMessage(names.join("\n"));
+  alert("사업자명 목록을 복사했습니다.");
+});
+
 $("#printAllButton").addEventListener("click", () => {
   const text = store.results.map((result) => result.message).join("\n\n");
   if (!text) return alert("출력할 매칭 결과가 없습니다.");
