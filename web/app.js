@@ -212,6 +212,7 @@ function renderResults() {
     node.querySelector("p").textContent = result.phone ? `연락처 ${result.phone}` : "연락처 없음";
     node.querySelector(".report-count").textContent = `${result.items.length}건`;
     node.querySelector(".message-preview").innerHTML = messageToHtml(result.message);
+    node.querySelector(".partner-copy-button").dataset.resultId = result.id;
     node.querySelector(".copy-button").dataset.resultId = result.id;
     node.querySelector(".image-button").dataset.resultId = result.id;
     node.querySelector(".print-button").dataset.resultId = result.id;
@@ -790,18 +791,29 @@ $("#clearStockoutButton").addEventListener("click", () => {
 });
 
 $("#resultGrid").addEventListener("click", async (event) => {
+  const partnerCopyButton = event.target.closest(".partner-copy-button");
   const copyButton = event.target.closest(".copy-button");
   const imageButton = event.target.closest(".image-button");
   const printButton = event.target.closest(".print-button");
   const doneButton = event.target.closest(".done-button");
-  const resultId = copyButton?.dataset.resultId || imageButton?.dataset.resultId || printButton?.dataset.resultId || doneButton?.dataset.resultId;
+  const resultId =
+    partnerCopyButton?.dataset.resultId ||
+    copyButton?.dataset.resultId ||
+    imageButton?.dataset.resultId ||
+    printButton?.dataset.resultId ||
+    doneButton?.dataset.resultId;
   if (!resultId) return;
   const result = store.results.find((item) => item.id === resultId);
   if (!result) return;
+  if (partnerCopyButton) {
+    await copyMessage(result.partnerName);
+    partnerCopyButton.textContent = "복사완료";
+    setTimeout(() => (partnerCopyButton.textContent = "사업자명복사"), 1200);
+  }
   if (copyButton) {
     await copyMessage(result.message);
     copyButton.textContent = "복사완료";
-    setTimeout(() => (copyButton.textContent = "복사"), 1200);
+    setTimeout(() => (copyButton.textContent = "전체복사"), 1200);
   }
   if (imageButton) {
     imageButton.disabled = true;
@@ -834,13 +846,6 @@ $("#copyAllButton").addEventListener("click", async () => {
   if (!text) return alert("복사할 매칭 결과가 없습니다.");
   await copyMessage(text);
   alert("전체 결과를 복사했습니다.");
-});
-
-$("#copyPartnerNamesButton").addEventListener("click", async () => {
-  const names = [...new Set(store.results.map((result) => result.partnerName).filter(Boolean))];
-  if (!names.length) return alert("복사할 사업자명이 없습니다.");
-  await copyMessage(names.join("\n"));
-  alert("사업자명 목록을 복사했습니다.");
 });
 
 $("#printAllButton").addEventListener("click", () => {
