@@ -34,18 +34,28 @@
   }
 
   function distributionRow(row) {
+    const narrowExpectedDate = columnText(row, 285, 380);
+    if (narrowExpectedDate) {
+      return {
+        company: columnText(row, 0, 75),
+        productName: columnText(row, 75, 285),
+        expectedDate: narrowExpectedDate,
+        note: columnText(row, 380),
+      };
+    }
+
     return {
-      company: columnText(row, 0, 90),
-      productName: columnText(row, 90, 285),
-      expectedDate: columnText(row, 285, 380),
-      note: columnText(row, 380),
+      company: columnText(row, 0, 75),
+      productName: columnText(row, 75, 390),
+      expectedDate: columnText(row, 390, 470),
+      note: columnText(row, 470),
     };
   }
 
   function rateChangeRow(row) {
     return {
-      company: columnText(row, 0, 90),
-      productName: columnText(row, 90, 285),
+      company: columnText(row, 0, 75),
+      productName: columnText(row, 75, 285),
       previousRate: columnText(row, 285, 380),
       nextRate: columnText(row, 380, 470),
       effectiveDate: columnText(row, 470),
@@ -54,16 +64,25 @@
 
   function settlementStopRow(row) {
     return {
-      company: columnText(row, 0, 90),
-      productName: columnText(row, 90, 285),
+      company: columnText(row, 0, 75),
+      productName: columnText(row, 75, 285),
       expectedDate: columnText(row, 285, 360),
       note: columnText(row, 360),
+    };
+  }
+
+  function promotionRow(row) {
+    return {
+      company: columnText(row, 0, 75),
+      productName: columnText(row, 75, 260),
+      note: columnText(row, 260),
     };
   }
 
   function pageCategory(rows) {
     for (const row of rows) {
       const text = row.map((item) => item.text).join(" ");
+      if (/프로모션\s*공지/.test(text)) return "프로모션";
       if (/요율변경\s*공지|변경전.*변경\s*후.*적용시점/.test(text)) return "요율변경";
       if (/정산중단\s*공지|정산중단일/.test(text)) return "정산중단";
     }
@@ -71,7 +90,7 @@
   }
 
   function isNoticeHeader(text) {
-    return /제약사명|제품명|입고\s*예정일|출하\s*예정일|정산중단일|변경전|변경\s*후|적용시점|공지사항|유통현황|품절공지|정산중단\s*공지|요율변경\s*공지/.test(
+    return /제약사명|제품명|내용|입고\s*예정일|출하\s*예정일|정산중단일|변경전|변경\s*후|적용시점|공지사항|유통현황|품절공지|프로모션\s*공지|정산중단\s*공지|요율변경\s*공지/.test(
       text,
     );
   }
@@ -102,50 +121,70 @@
     const items = [];
     for (const rows of pages) {
       const category = pageCategory(rows);
-      let currentCompany = "";
-      const pendingCompanyItems = [];
+      const companyMarkers = [];
+      const pageItems = [];
 
       for (const row of rows) {
-        const parsed = category === "요율변경" ? rateChangeRow(row) : category === "정산중단" ? settlementStopRow(row) : distributionRow(row);
+        const parsed =
+          category === "요율변경"
+            ? rateChangeRow(row)
+            : category === "정산중단"
+              ? settlementStopRow(row)
+              : category === "프로모션"
+                ? promotionRow(row)
+                : distributionRow(row);
         const combined =
           category === "요율변경"
             ? `${parsed.company} ${parsed.productName} ${parsed.previousRate} ${parsed.nextRate} ${parsed.effectiveDate}`
+            : category === "프로모션"
+              ? `${parsed.company} ${parsed.productName} ${parsed.note}`
             : `${parsed.company} ${parsed.productName} ${parsed.expectedDate} ${parsed.note}`;
         if (isNoticeHeader(combined)) continue;
 
         if (parsed.company) {
-          if (!currentCompany) {
-            pendingCompanyItems.forEach((item) => {
-              item.company = parsed.company;
-            });
-            pendingCompanyItems.length = 0;
-          }
-          currentCompany = parsed.company;
+          companyMarkers.push({ company: parsed.company, y: row[0]?.y ?? 0 });
         }
 
         if (!parsed.productName) continue;
-        if (category !== "요율변경" && !parsed.expectedDate) continue;
+        if (!["요율변경", "프로모션"].includes(category) && !parsed.expectedDate) continue;
         if (category === "품절" && RELEASE_RE.test(`${parsed.expectedDate} ${parsed.note}`)) continue;
 
         const item =
           category === "요율변경"
             ? {
                 category,
-                company: parsed.company || currentCompany,
+                company: parsed.company || "",
                 productName: parsed.productName,
                 expectedDate: parsed.effectiveDate || "-",
                 previousRate: parsed.previousRate || "-",
                 nextRate: parsed.nextRate || "-",
               }
+            : category === "프로모션"
+              ? {
+                  category,
+                  company: parsed.company || "",
+                  productName: parsed.productName,
+                  expectedDate: parsed.note || "-",
+                  note: parsed.note || "",
+                }
             : {
                 category,
-                company: parsed.company || currentCompany,
+                company: parsed.company || "",
                 productName: parsed.productName,
                 expectedDate: parsed.expectedDate || "-",
                 note: parsed.note || "",
               };
+        pageItems.push({ ...item, y: row[0]?.y ?? 0 });
+      }
+
+      for (const item of pageItems) {
+        if (!item.company && companyMarkers.length) {
+          item.company = companyMarkers
+            .map((marker) => ({ ...marker, distance: Math.abs(marker.y - item.y) }))
+            .sort((a, b) => a.distance - b.distance)[0].company;
+        }
+        delete item.y;
         items.push(item);
-        if (!item.company) pendingCompanyItems.push(item);
       }
     }
     return items;

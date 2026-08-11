@@ -1,4 +1,5 @@
 const STORAGE_KEY = "outofstock-master-match-v2";
+const RELEASE_NOTICE_HIDE_UNTIL_KEY = "outofstock-release-notice-hide-until-v1";
 const divider = "━━━━━━━━━━━━━━";
 
 let store = loadStore();
@@ -49,7 +50,7 @@ function productStem(value) {
     .replace(/\([^)]*\)/g, "")
     .replace(/\[[^\]]*\]/g, "")
     .replace(/\d+(?:\.\d+)?(?:\/\d+(?:\.\d+)?)*\s*(?:MG|ML|G|MCG|UG|IU|%|정|캡슐|T|C|B|관|병|포)?/g, "")
-    .replace(/(?:PTP|일반|다회용|일회용|신형|구형|서방|장용)/g, "")
+    .replace(/(?:PTP|일반|다회용|일회용|신형|구형)/g, "")
     .replace(/[^A-Z가-힣]/g, "");
 }
 
@@ -76,6 +77,12 @@ function strengthsCompatible(masterName, stockoutName) {
   return masterTokens.every((token) => stockoutTokens.includes(token));
 }
 
+function formulationCompatible(masterName, noticeName) {
+  const master = clean(masterName).normalize("NFKC").toUpperCase();
+  const notice = clean(noticeName).normalize("NFKC").toUpperCase();
+  return ["서방", "장용"].every((word) => master.includes(word) === notice.includes(word));
+}
+
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -87,6 +94,7 @@ function itemCategory(item) {
 function categoryDetailLabel(category) {
   if (category === "정산중단") return "정산중단일";
   if (category === "요율변경") return "적용시점";
+  if (category === "프로모션") return "내용";
   return "출하예정일";
 }
 
@@ -95,6 +103,7 @@ function itemDetail(item) {
     const rate = [item.previousRate, item.nextRate].filter(Boolean).join(" → ");
     return [rate, item.expectedDate].filter(Boolean).join(" / ") || "-";
   }
+  if (itemCategory(item) === "프로모션") return item.note || item.expectedDate || "-";
   return item.expectedDate || "-";
 }
 
@@ -103,6 +112,24 @@ function switchView(viewId) {
   document.querySelectorAll(".nav-button").forEach((button) => button.classList.remove("active"));
   $(`#${viewId}`).classList.add("active");
   document.querySelector(`[data-view="${viewId}"]`)?.classList.add("active");
+}
+
+function hideReleaseNotice() {
+  $("#releaseNoticeModal")?.classList.add("hidden");
+}
+
+function showReleaseNoticeIfNeeded() {
+  const modal = $("#releaseNoticeModal");
+  if (!modal) return;
+  const hideUntil = Number(localStorage.getItem(RELEASE_NOTICE_HIDE_UNTIL_KEY) || 0);
+  if (hideUntil > Date.now()) return;
+  modal.classList.remove("hidden");
+}
+
+function snoozeReleaseNotice() {
+  const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+  localStorage.setItem(RELEASE_NOTICE_HIDE_UNTIL_KEY, String(Date.now() + oneWeekMs));
+  hideReleaseNotice();
 }
 
 function render() {
@@ -424,7 +451,12 @@ function findMatches() {
     for (const stockout of stockoutIndex) {
       let matchType = "";
       if (full.length >= 4 && stockout.full.includes(full)) matchType = "정확/포함";
-      else if (stem.length >= 4 && stockout.stem.includes(stem) && strengthsCompatible(master.productName, stockout.item.productName)) {
+      else if (
+        stem.length >= 4 &&
+        stockout.stem.includes(stem) &&
+        formulationCompatible(master.productName, stockout.item.productName) &&
+        strengthsCompatible(master.productName, stockout.item.productName)
+      ) {
         matchType = extractStrengthTokens(master.productName).length ? "제품명+용량 기준" : "제품명 기준";
       }
       if (!matchType) continue;
@@ -437,7 +469,7 @@ function findMatches() {
 
 function buildMessage(date, partnerName, phone, matches) {
   const circled = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
-  const categories = ["품절", "정산중단", "요율변경"];
+  const categories = ["품절", "정산중단", "요율변경", "프로모션"];
   const categoryCounts = categories
     .map((category) => {
       const count = matches.filter((match) => itemCategory(match.stockout) === category).length;
@@ -446,7 +478,7 @@ function buildMessage(date, partnerName, phone, matches) {
     .filter(Boolean)
     .join(", ");
   const lines = [
-    "🚨서원파마에서 품절/정산중단/요율변경 안내 드립니다. 대표님.",
+    "🚨서원파마에서 품절/정산중단/요율변경/프로모션 안내 드립니다. 대표님.",
     "",
     `[${date} / ${partnerName} 공지 알림]`,
     `${partnerName} 관련 공지 품목: 총 ${matches.length}개${categoryCounts ? ` (${categoryCounts})` : ""}`,
@@ -468,7 +500,7 @@ function buildMessage(date, partnerName, phone, matches) {
         lines.push(`- 변경요율: ${match.stockout.previousRate || "-"} → ${match.stockout.nextRate || "-"}`);
       }
       lines.push(`- ${categoryDetailLabel(category)}: ${match.stockout.expectedDate || "-"}`);
-      if (match.stockout.note) lines.push(`- 비고: ${match.stockout.note}`);
+      if (match.stockout.note && match.stockout.note !== match.stockout.expectedDate) lines.push(`- 비고: ${match.stockout.note}`);
       lines.push("");
     });
   }
@@ -482,7 +514,7 @@ function messageToHtml(text) {
     .split("\n")
     .map((line) => {
       const escaped = escapeHtml(line);
-      if (/^\[\d{4}-\d{2}-\d{2} \/ .+ (품절|공지) 알림\]$/.test(line) || /^\[(품절|정산중단|요율변경)\]$/.test(line)) {
+      if (/^\[\d{4}-\d{2}-\d{2} \/ .+ (품절|공지) 알림\]$/.test(line) || /^\[(품절|정산중단|요율변경|프로모션)\]$/.test(line)) {
         return `<strong>${escaped}</strong>`;
       }
       return escaped || "&nbsp;";
@@ -612,7 +644,7 @@ async function resultImageBlob(result) {
   const contentWidth = width - padding * 2;
   const fontFamily = '"Malgun Gothic", "Segoe UI", Arial, sans-serif';
   const headerRe = /^\[\d{4}-\d{2}-\d{2} \/ .+ (품절|공지) 알림\]$/;
-  const categoryRe = /^\[(품절|정산중단|요율변경)\]$/;
+  const categoryRe = /^\[(품절|정산중단|요율변경|프로모션)\]$/;
 
   const measureCanvas = document.createElement("canvas");
   const measureCtx = measureCanvas.getContext("2d");
@@ -721,6 +753,9 @@ document.querySelectorAll("[data-view-jump]").forEach((button) => {
 });
 
 $("#matchDate").value = today();
+$("#releaseNoticeCloseIcon")?.addEventListener("click", hideReleaseNotice);
+$("#releaseNoticeCloseButton")?.addEventListener("click", hideReleaseNotice);
+$("#releaseNoticeSnoozeButton")?.addEventListener("click", snoozeReleaseNotice);
 $("#runMatchButton").addEventListener("click", runMatch);
 $("#saveButton").addEventListener("click", () => {
   saveStore();
@@ -889,3 +924,4 @@ $("#clearHistoryButton").addEventListener("click", () => {
 });
 
 render();
+showReleaseNoticeIfNeeded();
