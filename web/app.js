@@ -146,7 +146,6 @@ function render() {
 
   renderMasterTable();
   renderStockoutTable();
-  renderLatestNotice();
   renderResults();
   renderHistory();
   updateWorkflowState();
@@ -222,75 +221,6 @@ function renderStockoutTable() {
         )
         .join("")
     : `<tr><td colspan="4">공지 PDF를 업로드하거나 붙여넣기로 입력해 주세요.</td></tr>`;
-}
-
-function categoryClass(category) {
-  if (category === "프로모션") return "promo";
-  if (category === "요율변경") return "rate";
-  if (category === "정산중단") return "stop";
-  return "stockout";
-}
-
-function noticeItemHtml(item) {
-  const category = itemCategory(item);
-  return `
-    <article class="notice-item">
-      <div>
-        <strong>${escapeHtml(item.productName)}</strong>
-        <p>제약사명: ${escapeHtml(item.company || "-")} · ${escapeHtml(categoryDetailLabel(category))}: ${escapeHtml(itemDetail(item))}</p>
-      </div>
-      <span class="notice-tag">${escapeHtml(category)}</span>
-    </article>
-  `;
-}
-
-function renderLatestNotice() {
-  const items = store.stockoutItems;
-  const counts = {
-    stockout: items.filter((item) => itemCategory(item) === "품절").length,
-    promo: items.filter((item) => itemCategory(item) === "프로모션").length,
-    rate: items.filter((item) => itemCategory(item) === "요율변경").length,
-    stop: items.filter((item) => itemCategory(item) === "정산중단").length,
-  };
-
-  $("#latestTotal").textContent = items.length;
-  $("#latestStockout").textContent = counts.stockout;
-  $("#latestPromo").textContent = counts.promo;
-  $("#latestFullTotal").textContent = items.length;
-  $("#latestFullStockout").textContent = counts.stockout;
-  $("#latestFullPromo").textContent = counts.promo;
-  $("#latestFullRate").textContent = counts.rate;
-  $("#latestFullStop").textContent = counts.stop;
-
-  const summaryItems = items.slice(0, 4);
-  $("#latestNoticeList").innerHTML = summaryItems.length
-    ? summaryItems.map(noticeItemHtml).join("")
-    : `<section class="panel empty-state">공지 PDF를 업로드하면 최신 공지 요약이 표시됩니다.</section>`;
-
-  if (!items.length) {
-    $("#latestNoticeFullList").innerHTML = `<section class="panel empty-state">아직 추출된 공지가 없습니다. 공지 PDF를 업로드하거나 공지 리스트를 입력해 주세요.</section>`;
-    return;
-  }
-
-  const categories = ["품절", "프로모션", "요율변경", "정산중단"];
-  $("#latestNoticeFullList").innerHTML = categories
-    .map((category) => {
-      const categoryItems = items.filter((item) => itemCategory(item) === category);
-      if (!categoryItems.length) return "";
-      return `
-        <article class="panel notice-group">
-          <div class="notice-group-head">
-            <div>
-              <h3>${escapeHtml(category)} 공지</h3>
-              <p class="muted">${categoryItems.length}개 품목</p>
-            </div>
-            <span class="category-badge ${categoryClass(category)}">${escapeHtml(category)}</span>
-          </div>
-          <div class="notice-group-list">${categoryItems.map(noticeItemHtml).join("")}</div>
-        </article>
-      `;
-    })
-    .join("");
 }
 
 function renderResults() {

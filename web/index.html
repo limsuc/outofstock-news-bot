@@ -3,8 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>서원파마 공지 매칭 시스템</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23ffffff'/%3E%3Ctext x='32' y='41' text-anchor='middle' font-family='Arial,sans-serif' font-size='28' font-weight='900' fill='%23102a43'%3ESW%3C/text%3E%3C/svg%3E" />
+    <title>사업자별 공지 매칭</title>
     <link rel="stylesheet" href="/styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </head>
@@ -12,15 +11,14 @@
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <span class="brand-mark">SW</span>
+          <span class="brand-mark">품</span>
           <div>
-            <strong>서원파마 공지 매칭 시스템</strong>
-            <small>거래처별 안내 리포트</small>
+            <strong>사업자별 공지 매칭</strong>
+            <small>엑셀 마스터 기반 리포트</small>
           </div>
         </div>
         <nav>
           <button class="nav-button active" data-view="dashboard">대시보드</button>
-          <button class="nav-button" data-view="latestNotice">최신공지</button>
           <button class="nav-button" data-view="master">거래처 마스터</button>
           <button class="nav-button" data-view="stockout">공지 리스트</button>
           <button class="nav-button" data-view="results">매칭 결과</button>
@@ -31,8 +29,7 @@
       <main class="content">
         <header class="topbar">
           <div>
-            <span class="eyebrow">업무 대시보드</span>
-            <h1>서원파마 공지 매칭 시스템</h1>
+            <h1>거래처 마스터와 공지 리스트 대조</h1>
             <p>사업자명·병의원명·제품명이 들어있는 엑셀을 올리면 품절·정산중단·요율변경·프로모션 품목을 사업자별로 출력합니다.</p>
           </div>
           <div class="top-actions">
@@ -121,45 +118,6 @@
               <button class="secondary-button" type="button" data-view-jump="results">결과 화면 열기</button>
             </section>
           </div>
-
-          <aside class="dashboard-side">
-            <section class="panel latest-summary-panel">
-              <div class="panel-heading">
-                <div>
-                  <h2>최신공지</h2>
-                  <p class="muted">대시보드에서는 핵심 공지만 빠르게 확인합니다.</p>
-                </div>
-                <button class="secondary-button" type="button" data-view-jump="latestNotice">전체보기</button>
-              </div>
-              <div class="notice-summary">
-                <div><span>공지 품목</span><strong id="latestTotal">0</strong></div>
-                <div><span>품절</span><strong id="latestStockout">0</strong></div>
-                <div><span>프로모션</span><strong id="latestPromo">0</strong></div>
-              </div>
-              <div id="latestNoticeList" class="notice-list compact"></div>
-            </section>
-          </aside>
-        </section>
-
-        <section id="latestNotice" class="view">
-          <section class="panel">
-            <div class="panel-heading">
-              <div>
-                <span class="eyebrow">최신공지 메뉴</span>
-                <h2>최신공지 전체보기</h2>
-                <p class="muted">PDF에서 추출한 공지를 텍스트로 확인하고, 분류별로 빠르게 점검합니다.</p>
-              </div>
-              <button class="secondary-button" type="button" data-view-jump="stockout">표 형태로 보기</button>
-            </div>
-            <div class="notice-filter-row">
-              <span class="category-badge">전체 <b id="latestFullTotal">0</b></span>
-              <span class="category-badge stockout">품절 <b id="latestFullStockout">0</b></span>
-              <span class="category-badge promo">프로모션 <b id="latestFullPromo">0</b></span>
-              <span class="category-badge rate">요율변경 <b id="latestFullRate">0</b></span>
-              <span class="category-badge stop">정산중단 <b id="latestFullStop">0</b></span>
-            </div>
-          </section>
-          <div id="latestNoticeFullList" class="notice-full-list"></div>
         </section>
 
         <section id="master" class="view">
