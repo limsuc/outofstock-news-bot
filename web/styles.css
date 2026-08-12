@@ -350,6 +350,29 @@ p {
   margin-bottom: 16px;
 }
 
+.filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.filter-button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  padding: 7px 12px;
+  font-weight: 700;
+}
+
+.filter-button.active,
+.filter-button:hover {
+  border-color: var(--primary);
+  background: #e8f3f7;
+  color: var(--primary-dark);
+}
+
 .badge {
   border-radius: 999px;
   background: #eaf3f6;
@@ -500,6 +523,13 @@ input:disabled {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   margin-top: 16px;
+}
+
+.upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 input,

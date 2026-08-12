@@ -1,8 +1,14 @@
 const STORAGE_KEY = "outofstock-master-match-v2";
 const RELEASE_NOTICE_HIDE_UNTIL_KEY = "outofstock-release-notice-hide-until-v1";
+const STOCKOUT_DRIVE_FILE_ID = "15dOI-2gYbOLEett8Jfu4OWilAytZdM26";
+const STOCKOUT_DRIVE_VIEW_URL = `https://drive.google.com/file/d/${STOCKOUT_DRIVE_FILE_ID}/view?pli=1`;
+const STOCKOUT_DRIVE_DOWNLOAD_URL = `https://drive.google.com/uc?export=download&id=${STOCKOUT_DRIVE_FILE_ID}`;
+const STOCKOUT_PROXY_PATH = "/api/stockout-pdf";
+const LOCAL_STOCKOUT_PROXY_URL = "http://127.0.0.1:8765/api/stockout-pdf";
 const divider = "━━━━━━━━━━━━━━";
 
 let store = loadStore();
+let resultCategoryFilter = "all";
 
 const $ = (selector) => document.querySelector(selector);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -169,8 +175,11 @@ function updateWorkflowState() {
   setStepState("stepMatch", "matchStatus", hasResults ? "매칭 완료" : hasMaster && hasStockout ? "실행 가능" : "자료 필요", !(hasMaster && hasStockout));
   setStepState("stepResult", "resultStatus", hasResults ? `${store.results.length}명 완료` : "대기", !hasResults);
 
-  $("#stockoutPdfForm button").disabled = !hasMaster;
+  document.querySelectorAll("#stockoutPdfForm button, #stockoutPdfFormSecondary button").forEach((button) => {
+    button.disabled = !hasMaster;
+  });
   $("#stockoutPdfFile").disabled = !hasMaster;
+  $("#stockoutPdfFileSecondary").disabled = !hasMaster;
   $("#runMatchButton").disabled = !(hasMaster && hasStockout);
 }
 
@@ -227,18 +236,22 @@ function renderResults() {
   const grid = $("#resultGrid");
   if (!store.results.length) {
     grid.innerHTML = `<section class="panel empty-state">아직 공지 매칭 결과가 없습니다. 마스터와 공지 리스트를 올린 뒤 매칭 실행을 눌러주세요.</section>`;
+    renderResultFilterButtons();
     return;
   }
 
   const template = $("#resultCardTemplate");
   grid.innerHTML = "";
+  renderResultFilterButtons();
   for (const result of store.results) {
+    const filteredItems = filteredResultItems(result);
+    if (!filteredItems.length) continue;
     const node = template.content.firstElementChild.cloneNode(true);
     if (result.status === "done") node.classList.add("done");
     node.querySelector("h3").textContent = result.partnerName;
     node.querySelector("p").textContent = result.phone ? `연락처 ${result.phone}` : "연락처 없음";
-    node.querySelector(".report-count").textContent = `${result.items.length}건`;
-    node.querySelector(".message-preview").innerHTML = messageToHtml(result.message);
+    node.querySelector(".report-count").textContent = `${filteredItems.length}건`;
+    node.querySelector(".message-preview").innerHTML = messageToHtml(buildResultMessage(result, filteredItems));
     node.querySelector(".partner-copy-button").dataset.resultId = result.id;
     node.querySelector(".phone-copy-button").dataset.resultId = result.id;
     node.querySelector(".copy-button").dataset.resultId = result.id;
@@ -248,6 +261,69 @@ function renderResults() {
     node.querySelector(".done-button").textContent = result.status === "done" ? "전달완료됨" : "전달완료";
     grid.appendChild(node);
   }
+  if (!grid.children.length) {
+    const label = resultCategoryFilter === "all" ? "매칭 결과" : `${resultCategoryFilter} 매칭 결과`;
+    grid.innerHTML = `<section class="panel empty-state">${label}가 없습니다.</section>`;
+  }
+}
+
+function renderResultFilterButtons() {
+  document.querySelectorAll("[data-result-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.resultFilter === resultCategoryFilter);
+  });
+}
+
+function filteredResultItems(result) {
+  if (resultCategoryFilter === "all") return result.items;
+  return result.items.filter((item) => itemCategory(item) === resultCategoryFilter);
+}
+
+function categoriesForResultMessage(items) {
+  const categories = ["품절", "정산중단", "요율변경", "프로모션"];
+  return categories.filter((category) => items.some((item) => itemCategory(item) === category));
+}
+
+function resultMessageIntro(categories) {
+  if (categories.length === 1) {
+    if (categories[0] === "품절") return "🚨서원파마에서 품절 안내 드립니다. 대표님.";
+    if (categories[0] === "프로모션") return "🚨서원파마에서 프로모션 안내 드립니다. 대표님.";
+  }
+  return "🚨서원파마에서 품절/정산중단/요율변경/프로모션 안내 드립니다. 대표님.";
+}
+
+function buildResultMessage(result, items = filteredResultItems(result)) {
+  const circled = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
+  const categories = categoriesForResultMessage(items);
+  const categoryCounts = categories.map((category) => `${category} ${items.filter((item) => itemCategory(item) === category).length}개`).join(", ");
+  const lines = [
+    resultMessageIntro(categories),
+    "",
+    `[${result.date} / ${result.partnerName} 공지 알림]`,
+    `${result.partnerName} 관련 공지 품목: 총 ${items.length}개${categoryCounts ? ` (${categoryCounts})` : ""}`,
+    "",
+    divider,
+  ];
+
+  for (const category of categories) {
+    const categoryItems = items.filter((item) => itemCategory(item) === category);
+    lines.push(`[${category}]`);
+    categoryItems.forEach((item, index) => {
+      lines.push(
+        `${circled[index] || `${index + 1}.`} ${item.hospitalName}`,
+        `- 제약사명: ${item.company || "-"}`,
+        `- 품목명: ${item.productName}`,
+      );
+      if (category === "요율변경") {
+        lines.push(`- 변경요율: ${item.previousRate || "-"} → ${item.nextRate || "-"}`);
+      }
+      lines.push(`- ${categoryDetailLabel(category)}: ${item.expectedDate || "-"}`);
+      if (item.note && item.note !== item.expectedDate) lines.push(`- 비고: ${item.note}`);
+      lines.push("");
+    });
+  }
+
+  lines.push(divider, "", "거래처별 품목 확인 부탁드립니다.");
+  return lines.join("\n");
 }
 
 function renderHistory() {
@@ -634,7 +710,7 @@ function canvasTextLines(ctx, text, maxWidth) {
   return lines;
 }
 
-async function resultImageBlob(result) {
+async function resultImageBlob(result, text = result.message) {
   if (document.fonts?.ready) await document.fonts.ready;
 
   const width = 900;
@@ -650,7 +726,7 @@ async function resultImageBlob(result) {
   const measureCtx = measureCanvas.getContext("2d");
   const rows = [];
 
-  for (const rawLine of result.message.split("\n")) {
+  for (const rawLine of text.split("\n")) {
     if (!rawLine) {
       rows.push({ type: "space", height: 15 });
       continue;
@@ -716,7 +792,7 @@ function downloadBlob(blob, filename) {
 }
 
 async function copyResultImage(result) {
-  const blob = await resultImageBlob(result);
+  const blob = await resultImageBlob(result, buildResultMessage(result));
   if (!blob) throw new Error("PNG 이미지를 만들 수 없습니다.");
   const filename = `${result.partnerName}_공지알림_${result.date}.png`.replace(/[\\/:*?"<>|]/g, "_");
 
@@ -750,6 +826,13 @@ document.querySelectorAll(".nav-button").forEach((button) => {
 
 document.querySelectorAll("[data-view-jump]").forEach((button) => {
   button.addEventListener("click", () => switchView(button.dataset.viewJump));
+});
+
+document.querySelectorAll("[data-result-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    resultCategoryFilter = button.dataset.resultFilter;
+    renderResults();
+  });
 });
 
 $("#matchDate").value = today();
@@ -786,16 +869,72 @@ async function handlePdfUpload(input) {
   if (!file) return alert("공지 PDF 파일을 선택해 주세요.");
   try {
     const parsed = await parsePdfStockouts(file);
-    store.stockoutItems = parsed.items;
-    store.results = [];
-    saveStore();
-    $("#stockoutUploadResult").classList.remove("hidden");
-    $("#stockoutUploadResult").textContent = `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel}`;
-    render();
-    switchView("dashboard");
+    applyParsedStockouts(parsed);
   } catch (error) {
     alert(`PDF 추출 실패: ${error.message}`);
   }
+}
+
+function applyParsedStockouts(parsed) {
+  store.stockoutItems = parsed.items;
+  store.results = [];
+  saveStore();
+  $("#stockoutUploadResult").classList.remove("hidden");
+  $("#stockoutUploadResult").textContent = `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel}`;
+  render();
+  switchView("dashboard");
+}
+
+async function loadStockoutPdfFromDrive(button) {
+  if (!store.masterItems.length) {
+    alert("먼저 거래처 마스터 엑셀을 업로드해 주세요.");
+    return;
+  }
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "불러오는 중";
+  try {
+    const blob = await fetchStockoutPdfBlob();
+    if (!blob.size) throw new Error("빈 파일입니다.");
+    const file = new File([blob], "서원파마_품절리스트.pdf", { type: "application/pdf" });
+    const parsed = await parsePdfStockouts(file);
+    applyParsedStockouts(parsed);
+  } catch (error) {
+    window.open(STOCKOUT_DRIVE_VIEW_URL, "_blank", "noopener");
+    alert(`자동 불러오기에 실패했습니다.\n로컬에서 자동 불러오기를 쓰려면 터미널에서 python web_app.py를 실행한 뒤 http://127.0.0.1:8765 로 접속해 주세요.\n열린 Google Drive 화면에서 내려받아 직접 업로드할 수도 있습니다.\n\n상세: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+async function fetchStockoutPdfBlob() {
+  const urls = stockoutPdfUrls();
+  let lastError;
+  for (const url of urls) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`${url} 응답 오류: ${response.status}`);
+      const blob = await response.blob();
+      if (!blob.size) throw new Error(`${url} 빈 파일`);
+      return blob;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("PDF를 불러오지 못했습니다.");
+}
+
+function stockoutPdfUrls() {
+  const urls = [];
+  if (location.protocol === "http:" || location.protocol === "https:") {
+    urls.push(STOCKOUT_PROXY_PATH);
+  }
+  if (location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost") {
+    urls.push(LOCAL_STOCKOUT_PROXY_URL);
+  }
+  urls.push(STOCKOUT_DRIVE_DOWNLOAD_URL);
+  return [...new Set(urls)];
 }
 
 $("#stockoutPdfForm").addEventListener("submit", (event) => {
@@ -806,6 +945,14 @@ $("#stockoutPdfForm").addEventListener("submit", (event) => {
 $("#stockoutPdfFormSecondary").addEventListener("submit", (event) => {
   event.preventDefault();
   handlePdfUpload($("#stockoutPdfFileSecondary"));
+});
+
+$("#stockoutDriveButton").addEventListener("click", (event) => {
+  loadStockoutPdfFromDrive(event.currentTarget);
+});
+
+$("#stockoutDriveButtonSecondary").addEventListener("click", (event) => {
+  loadStockoutPdfFromDrive(event.currentTarget);
 });
 
 $("#manualStockoutButton").addEventListener("click", () => {
@@ -855,7 +1002,7 @@ $("#resultGrid").addEventListener("click", async (event) => {
     setTimeout(() => (phoneCopyButton.textContent = "연락처복사"), 1200);
   }
   if (copyButton) {
-    await copyMessage(result.message);
+    await copyMessage(buildResultMessage(result));
     copyButton.textContent = "복사완료";
     setTimeout(() => (copyButton.textContent = "전체복사"), 1200);
   }
@@ -875,7 +1022,7 @@ $("#resultGrid").addEventListener("click", async (event) => {
       }, 1600);
     }
   }
-  if (printButton) printText(`${result.partnerName} 공지 리포트`, result.message);
+  if (printButton) printText(`${result.partnerName} 공지 리포트`, buildResultMessage(result));
   if (doneButton) {
     result.status = "done";
     const history = store.history.find((entry) => entry.id === result.id);
@@ -886,14 +1033,26 @@ $("#resultGrid").addEventListener("click", async (event) => {
 });
 
 $("#copyAllButton").addEventListener("click", async () => {
-  const text = store.results.map((result) => result.message).join("\n\n");
+  const text = store.results
+    .map((result) => {
+      const items = filteredResultItems(result);
+      return items.length ? buildResultMessage(result, items) : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
   if (!text) return alert("복사할 매칭 결과가 없습니다.");
   await copyMessage(text);
   alert("전체 결과를 복사했습니다.");
 });
 
 $("#printAllButton").addEventListener("click", () => {
-  const text = store.results.map((result) => result.message).join("\n\n");
+  const text = store.results
+    .map((result) => {
+      const items = filteredResultItems(result);
+      return items.length ? buildResultMessage(result, items) : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
   if (!text) return alert("출력할 매칭 결과가 없습니다.");
   printText("사업자별 공지 매칭 전체 결과", text);
 });

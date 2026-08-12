@@ -4,9 +4,17 @@
     {
       "src": "web/**",
       "use": "@vercel/static"
+    },
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/api/stockout-pdf",
+      "dest": "/api/stockout-pdf.js"
+    },
     {
       "src": "/",
       "dest": "/web/index.html"

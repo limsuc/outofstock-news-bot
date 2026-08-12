@@ -8,6 +8,7 @@ import sqlite3
 import sys
 import tempfile
 import urllib.parse
+import urllib.request
 from datetime import datetime
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +26,10 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 WEB_DIR = ROOT / "web"
 DB_PATH = DATA_DIR / "webapp.sqlite3"
+STOCKOUT_DRIVE_FILE_ID = "15dOI-2gYbOLEett8Jfu4OWilAytZdM26"
+STOCKOUT_DRIVE_DOWNLOAD_URL = (
+    f"https://drive.usercontent.google.com/download?id={STOCKOUT_DRIVE_FILE_ID}&export=download"
+)
 
 
 class HtmlTableParser(HTMLParser):
@@ -328,6 +333,29 @@ def json_response(handler: BaseHTTPRequestHandler, payload: object, status: int 
     handler.wfile.write(body)
 
 
+def send_pdf_response(handler: BaseHTTPRequestHandler, data: bytes) -> None:
+    handler.send_response(200)
+    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("Content-Type", "application/pdf")
+    handler.send_header("Content-Disposition", 'inline; filename="stockout-list.pdf"')
+    handler.send_header("Content-Length", str(len(data)))
+    handler.end_headers()
+    handler.wfile.write(data)
+
+
+def download_stockout_pdf() -> bytes:
+    request = urllib.request.Request(
+        STOCKOUT_DRIVE_DOWNLOAD_URL,
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        data = response.read()
+    if not data.startswith(b"%PDF"):
+        raise ValueError("Google Drive에서 PDF 파일을 내려받지 못했습니다.")
+    return data
+
+
 def read_json(handler: BaseHTTPRequestHandler) -> dict[str, object]:
     length = int(handler.headers.get("Content-Length", "0"))
     if length == 0:
@@ -344,6 +372,12 @@ class WebAppHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/state":
             json_response(self, get_state())
+            return
+        if parsed.path == "/api/stockout-pdf":
+            try:
+                send_pdf_response(self, download_stockout_pdf())
+            except Exception as exc:
+                json_response(self, {"error": str(exc)}, 502)
             return
         self.serve_static(parsed.path)
 

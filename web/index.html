@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>사업자별 공지 매칭</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </head>
   <body>
@@ -70,7 +70,10 @@
               </div>
               <form id="stockoutPdfForm" class="upload-box">
                 <input id="stockoutPdfFile" type="file" accept=".pdf" />
-                <button class="primary-button" type="submit">PDF 추출</button>
+                <div class="upload-actions">
+                  <button class="primary-button" type="submit">PDF 추출</button>
+                  <button id="stockoutDriveButton" class="secondary-button" type="button">품절리스트 불러오기</button>
+                </div>
               </form>
               <div class="step-helper">
                 <span>PDF 추출이 안 되면 공지 리스트 탭에서 붙여넣기 입력을 사용할 수 있습니다.</span>
@@ -150,7 +153,10 @@
               <h2>공지 PDF 다시 업로드</h2>
               <form id="stockoutPdfFormSecondary" class="upload-box">
                 <input id="stockoutPdfFileSecondary" type="file" accept=".pdf" />
-                <button class="primary-button" type="submit">PDF 추출</button>
+                <div class="upload-actions">
+                  <button class="primary-button" type="submit">PDF 추출</button>
+                  <button id="stockoutDriveButtonSecondary" class="secondary-button" type="button">품절리스트 불러오기</button>
+                </div>
               </form>
             </section>
 
@@ -191,6 +197,11 @@
                 <button id="copyAllButton" class="secondary-button">전체 결과 복사</button>
                 <button id="printAllButton" class="secondary-button">전체 PDF 출력</button>
               </div>
+            </div>
+            <div class="filter-tabs" aria-label="결과 구분">
+              <button class="filter-button active" type="button" data-result-filter="all">전체</button>
+              <button class="filter-button" type="button" data-result-filter="품절">품절만</button>
+              <button class="filter-button" type="button" data-result-filter="프로모션">프로모션만</button>
             </div>
             <p class="muted">품절, 정산중단, 요율변경, 프로모션 중 매칭 품목이 있는 사업자만 표시됩니다.</p>
           </section>
@@ -263,7 +274,7 @@
       </section>
     </div>
 
-    <script src="/pdf-stockout-parser.js"></script>
-    <script src="/app.js"></script>
+    <script src="pdf-stockout-parser.js"></script>
+    <script src="app.js"></script>
   </body>
 </html>
