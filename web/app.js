@@ -262,7 +262,7 @@ function renderResults() {
     grid.appendChild(node);
   }
   if (!grid.children.length) {
-    const label = resultCategoryFilter === "all" ? "매칭 결과" : `${resultCategoryFilter} 매칭 결과`;
+    const label = resultFilterLabel();
     grid.innerHTML = `<section class="panel empty-state">${label}가 없습니다.</section>`;
   }
 }
@@ -275,7 +275,16 @@ function renderResultFilterButtons() {
 
 function filteredResultItems(result) {
   if (resultCategoryFilter === "all") return result.items;
+  if (resultCategoryFilter === "정산요율") {
+    return result.items.filter((item) => ["정산중단", "요율변경"].includes(itemCategory(item)));
+  }
   return result.items.filter((item) => itemCategory(item) === resultCategoryFilter);
+}
+
+function resultFilterLabel() {
+  if (resultCategoryFilter === "all") return "매칭 결과";
+  if (resultCategoryFilter === "정산요율") return "정산중단/요율변경 매칭 결과";
+  return `${resultCategoryFilter} 매칭 결과`;
 }
 
 function categoriesForResultMessage(items) {
@@ -287,6 +296,11 @@ function resultMessageIntro(categories) {
   if (categories.length === 1) {
     if (categories[0] === "품절") return "🚨서원파마에서 품절 안내 드립니다. 대표님.";
     if (categories[0] === "프로모션") return "🚨서원파마에서 프로모션 안내 드립니다. 대표님.";
+    if (categories[0] === "정산중단") return "🚨서원파마에서 정산중단 안내 드립니다. 대표님.";
+    if (categories[0] === "요율변경") return "🚨서원파마에서 요율변경 안내 드립니다. 대표님.";
+  }
+  if (categories.length && categories.every((category) => ["정산중단", "요율변경"].includes(category))) {
+    return "🚨서원파마에서 정산중단/요율변경 안내 드립니다. 대표님.";
   }
   return "🚨서원파마에서 품절/정산중단/요율변경/프로모션 안내 드립니다. 대표님.";
 }
