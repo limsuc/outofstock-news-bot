@@ -576,6 +576,10 @@ input:disabled {
   margin-top: 16px;
 }
 
+.compact-upload {
+  margin-top: 12px;
+}
+
 .upload-actions {
   display: flex;
   flex-wrap: wrap;

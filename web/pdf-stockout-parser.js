@@ -150,6 +150,7 @@
       const category = pageCategory(rows);
       const companyMarkers = [];
       const pageItems = [];
+      let currentCompany = "";
 
       for (const row of rows) {
         const parsed =
@@ -169,6 +170,7 @@
         if (isNoticeHeader(combined)) continue;
 
         if (parsed.company) {
+          currentCompany = parsed.company;
           companyMarkers.push({ company: parsed.company, y: row[0]?.y ?? 0 });
         }
 
@@ -180,7 +182,7 @@
           category === "요율변경"
             ? {
                 category,
-                company: parsed.company || "",
+                company: parsed.company || currentCompany || "",
                 productName: parsed.productName,
                 expectedDate: parsed.effectiveDate || "-",
                 previousRate: parsed.previousRate || "-",
@@ -189,14 +191,14 @@
             : category === "프로모션"
               ? {
                   category,
-                  company: parsed.company || "",
+                  company: parsed.company || currentCompany || "",
                   productName: parsed.productName,
                   expectedDate: parsed.note || "-",
                   note: parsed.note || "",
                 }
             : {
                 category,
-                company: parsed.company || "",
+                company: parsed.company || currentCompany || "",
                 productName: parsed.productName,
                 expectedDate: parsed.expectedDate || "-",
                 note: parsed.note || "",

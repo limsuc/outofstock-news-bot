@@ -59,6 +59,14 @@
                 <button id="downloadTemplateButton" class="link-button" type="button">양식 CSV 다운로드</button>
               </div>
               <div id="masterUploadResult" class="result-box hidden"></div>
+              <form id="rateUploadForm" class="upload-box compact-upload">
+                <input id="rateFile" type="file" accept=".xls,.xlsx,.csv" />
+                <button class="secondary-button" type="submit">요율표 반영</button>
+              </form>
+              <div class="step-helper">
+                <span>선택: 요율표를 올리면 공지 PDF의 제약사·품목 좌우 매칭 오류를 더 정확히 잡습니다.</span>
+              </div>
+              <div id="rateUploadResult" class="result-box hidden"></div>
             </section>
 
             <section class="step-card" id="stepStockout">

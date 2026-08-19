@@ -17,6 +17,7 @@ const id = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 function loadStore() {
   const fallback = {
     masterItems: [],
+    rateItems: [],
     stockoutItems: [],
     stockoutWarnings: [],
     results: [],
@@ -127,12 +128,51 @@ function noticeDetail(item) {
   return item.expectedDate || "-";
 }
 
-function validateStockoutItems(items) {
+function companyCompatible(left, right) {
+  const a = normalizeCompany(left);
+  const b = normalizeCompany(right);
+  return a.length >= 2 && b.length >= 2 && (a.includes(b) || b.includes(a));
+}
+
+function productCompatible(left, right) {
+  const a = normalizeProduct(left);
+  const b = normalizeProduct(right);
+  const aStem = productStem(left);
+  const bStem = productStem(right);
+  return (
+    (a.length >= 4 && b.length >= 4 && (a.includes(b) || b.includes(a))) ||
+    (aStem.length >= 3 && bStem.length >= 3 && (aStem.includes(bStem) || bStem.includes(aStem)))
+  );
+}
+
+function rateCompanyMatches(item, rateItems = store.rateItems || []) {
+  return rateItems.filter(
+    (rate) => rate.company && productCompatible(rate.productName, item.productName) && strengthsCompatible(rate.productName, item.productName),
+  );
+}
+
+function reconcileStockoutCompanies(items, rateItems = store.rateItems || []) {
+  if (!rateItems.length) return items;
+  return items.map((item) => {
+    if (itemCategory(item) === "프로모션" || !item.productName) return item;
+    const matches = rateCompanyMatches(item, rateItems);
+    const companies = unique(matches.map((match) => match.company));
+    if (companies.length !== 1 || (item.company && companyCompatible(item.company, companies[0]))) return item;
+    return {
+      ...item,
+      company: companies[0],
+      correctionNote: `요율표 기준 제약사 자동 보정: ${item.company || "빈칸"} → ${companies[0]}`,
+    };
+  });
+}
+
+function validateStockoutItems(items, masterItems = store.masterItems || [], rateItems = store.rateItems || []) {
   const warnings = [];
   items.forEach((item, index) => {
     const category = itemCategory(item);
     const detail = noticeDetail(item);
     const label = `${index + 1}. ${item.company || "제약사 없음"} / ${item.productName || "품목명 없음"}`;
+    if (item.correctionNote) warnings.push(`${label}: ${item.correctionNote}`);
     if (!item.company) warnings.push(`${label}: 제약사명이 비어 있습니다.`);
     if (!item.productName || /^(제품명|내용|공지사항|유통현황)$/.test(clean(item.productName))) {
       warnings.push(`${label}: 품목명이 의심됩니다.`);
@@ -140,6 +180,33 @@ function validateStockoutItems(items) {
     if (category === "프로모션" && (!detail || detail === "-")) warnings.push(`${label}: 프로모션 내용이 비어 있습니다.`);
     if (category === "요율변경" && (!item.previousRate || !item.nextRate)) warnings.push(`${label}: 변경 전/후 요율이 비어 있습니다.`);
     if (["품절", "정산중단"].includes(category) && (!detail || detail === "-")) warnings.push(`${label}: 기준일/예정일이 비어 있습니다.`);
+
+    if (/(입고\s*예정|출하\s*예정|정산중단|적용시점|변경\s*후|변경전|\d{1,2}\s*월|\d{1,2}\s*일|미정|예정)/.test(clean(item.productName))) {
+      warnings.push(`${label}: 품목명 칸에 날짜/비고 문구가 섞인 것 같습니다. PDF 표 좌우 추출을 확인해 주세요.`);
+    }
+    if (
+      ["품절", "정산중단"].includes(category) &&
+      /(정|캡슐|서방|장용|주사|시럽|액|연고|크림|패취|MG|ML|MCG|IU)/i.test(clean(detail)) &&
+      !/(월|일|미정|예정|초|중순|말|입고|출하|정산|수수료|%)/.test(clean(detail))
+    ) {
+      warnings.push(`${label}: 기준일/예정일 칸이 품목명처럼 보입니다. PDF 표 좌우 추출을 확인해 주세요.`);
+    }
+    if (/\d+\s*(MG|ML|MCG|IU)|서방정|장용정|캡슐|정\s*\d|정$/i.test(clean(item.company))) {
+      warnings.push(`${label}: 제약사명 칸이 품목명처럼 보입니다. PDF 표 좌우 추출을 확인해 주세요.`);
+    }
+
+    if (item.company && category !== "프로모션") {
+      const rateMatches = rateCompanyMatches(item, rateItems);
+      const masterMatches = masterItems.filter(
+        (master) => master.company && productCompatible(master.productName, item.productName) && strengthsCompatible(master.productName, item.productName),
+      );
+      const productMatches = rateMatches.length ? rateMatches : masterMatches;
+      const expectedCompanies = unique(productMatches.map((master) => master.company));
+      if (expectedCompanies.length && !expectedCompanies.some((company) => companyCompatible(company, item.company))) {
+        const source = rateMatches.length ? "요율표" : "마스터";
+        warnings.push(`${label}: ${source} 기준 품목 제약사는 ${expectedCompanies.slice(0, 3).join(", ")}입니다. PDF 표 좌우 매칭이 틀렸을 수 있습니다.`);
+      }
+    }
   });
   return warnings;
 }
@@ -453,14 +520,27 @@ function rowsFromCsv(text) {
     .filter((row) => row.some(Boolean));
 }
 
-async function rowsFromWorkbook(file) {
+async function rowsFromWorkbook(file, preferredSheetNames = []) {
   if (!window.XLSX) {
     throw new Error("엑셀 파서 로딩에 실패했습니다. 인터넷 연결을 확인해 주세요.");
   }
   const buffer = await file.arrayBuffer();
   const workbook = window.XLSX.read(buffer, { type: "array" });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const preferred = workbook.SheetNames.find((name) => preferredSheetNames.some((keyword) => name.includes(keyword)));
+  const sheet = workbook.Sheets[preferred || workbook.SheetNames[0]];
   return window.XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false }).map((row) => row.map(clean));
+}
+
+async function workbookSheets(file) {
+  if (!window.XLSX) {
+    throw new Error("엑셀 파서 로딩에 실패했습니다. 인터넷 연결을 확인해 주세요.");
+  }
+  const buffer = await file.arrayBuffer();
+  const workbook = window.XLSX.read(buffer, { type: "array" });
+  return workbook.SheetNames.map((name) => ({
+    name,
+    rows: window.XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, raw: false }).map((row) => row.map(clean)),
+  }));
 }
 
 function findHeader(rows, requiredHeaders) {
@@ -472,13 +552,13 @@ function findHeader(rows, requiredHeaders) {
   throw new Error(`필수 컬럼을 찾지 못했습니다: ${requiredHeaders.join(", ")}`);
 }
 
-function findHeaderGroups(rows, headerGroups) {
+function findHeaderGroups(rows, headerGroups, errorMessage = "필수 컬럼을 찾지 못했습니다: 사업자명, 병의원명, 제품명") {
   for (let index = 0; index < rows.length; index += 1) {
     const normalized = rows[index].map(clean);
     const ok = headerGroups.every((group) => group.some((header) => normalized.includes(header)));
     if (ok) return { index, headers: Object.fromEntries(normalized.map((name, pos) => [name, pos])) };
   }
-  throw new Error("필수 컬럼을 찾지 못했습니다: 사업자명, 병의원명, 제품명");
+  throw new Error(errorMessage);
 }
 
 function getCell(row, headers, names) {
@@ -531,6 +611,71 @@ async function parseMasterFile(file) {
     items.push(item);
   }
   if (!items.length) throw new Error("거래처 마스터에서 유효한 데이터를 찾지 못했습니다.");
+  return items;
+}
+
+async function parseRateFile(file) {
+  const lower = file.name.toLowerCase();
+  let rows;
+  if (lower.endsWith(".csv")) rows = rowsFromCsv(await readFileAsText(file));
+  else if (lower.endsWith(".xlsx")) {
+    const sheets = await workbookSheets(file);
+    const matched = sheets
+      .map((sheet) => {
+        try {
+          return {
+            ...sheet,
+            header: findHeaderGroups(sheet.rows, [
+              ["제약회사", "제약사명", "제약사", "회사명"],
+              ["제품명", "품목명", "품목"],
+            ]),
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => (b.name.includes("수수료") ? 1 : 0) - (a.name.includes("수수료") ? 1 : 0))[0];
+    if (!matched) throw new Error("요율표에서 필수 컬럼을 찾지 못했습니다: 제약회사, 제품명");
+    rows = matched.rows;
+  }
+  else {
+    try {
+      const sheets = await workbookSheets(file);
+      const matched = sheets.find((sheet) => {
+        try {
+          findHeaderGroups(sheet.rows, [
+            ["제약회사", "제약사명", "제약사", "회사명"],
+            ["제품명", "품목명", "품목"],
+          ]);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      rows = matched?.rows || (await rowsFromWorkbook(file, ["수수료", "요율"]));
+    } catch {
+      rows = rowsFromHtml(await readFileAsText(file));
+    }
+  }
+
+  const { index, headers } = findHeaderGroups(rows, [
+    ["제약회사", "제약사명", "제약사", "회사명"],
+    ["제품명", "품목명", "품목"],
+  ], "요율표에서 필수 컬럼을 찾지 못했습니다: 제약회사, 제품명");
+  const items = [];
+  const seen = new Set();
+
+  for (const row of rows.slice(index + 1)) {
+    const company = getCell(row, headers, ["제약회사", "제약사명", "제약사", "회사명"]);
+    const productName = getCell(row, headers, ["제품명", "품목명", "품목"]);
+    if (!company || !productName) continue;
+    const key = [company, productName].map(clean).join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ company, productName });
+  }
+  if (!items.length) throw new Error("요율표에서 제약회사와 제품명 데이터를 찾지 못했습니다.");
   return items;
 }
 
@@ -797,6 +942,8 @@ function runMatch() {
     return;
   }
 
+  store.stockoutItems = reconcileStockoutCompanies(store.stockoutItems, store.rateItems);
+  store.stockoutWarnings = validateStockoutItems(store.stockoutItems, store.masterItems, store.rateItems);
   const date = $("#matchDate").value || today();
   const matches = findMatches();
   const grouped = new Map();
@@ -1114,10 +1261,30 @@ $("#masterUploadForm").addEventListener("submit", async (event) => {
   try {
     const items = await parseMasterFile(file);
     store.masterItems = items;
+    store.stockoutWarnings = validateStockoutItems(store.stockoutItems, store.masterItems, store.rateItems);
     store.results = [];
     saveStore();
     $("#masterUploadResult").classList.remove("hidden");
     $("#masterUploadResult").textContent = `거래처 마스터 반영 완료: ${items.length}개 품목`;
+    render();
+  } catch (error) {
+    alert(error.message);
+  }
+});
+
+$("#rateUploadForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const file = $("#rateFile").files[0];
+  if (!file) return alert("요율표 엑셀 파일을 선택해 주세요.");
+  try {
+    const items = await parseRateFile(file);
+    store.rateItems = items;
+    store.stockoutItems = reconcileStockoutCompanies(store.stockoutItems, store.rateItems);
+    store.stockoutWarnings = validateStockoutItems(store.stockoutItems, store.masterItems, store.rateItems);
+    store.results = [];
+    saveStore();
+    $("#rateUploadResult").classList.remove("hidden");
+    $("#rateUploadResult").textContent = `요율표 반영 완료: ${items.length}개 품목 · 제약사-품목 오류 검사 강화`;
     render();
   } catch (error) {
     alert(error.message);
@@ -1136,8 +1303,8 @@ async function handlePdfUpload(input) {
 }
 
 function applyParsedStockouts(parsed) {
-  store.stockoutItems = parsed.items;
-  store.stockoutWarnings = validateStockoutItems(parsed.items);
+  store.stockoutItems = reconcileStockoutCompanies(parsed.items, store.rateItems);
+  store.stockoutWarnings = validateStockoutItems(store.stockoutItems, store.masterItems, store.rateItems);
   store.results = [];
   saveStore();
   $("#stockoutUploadResult").classList.remove("hidden");
@@ -1227,7 +1394,8 @@ $("#manualStockoutButton").addEventListener("click", () => {
   const items = parseManualStockouts($("#manualStockoutText").value);
   if (!items.length) return alert("공지 품목을 입력해 주세요.");
   store.stockoutItems = items;
-  store.stockoutWarnings = [];
+  store.stockoutItems = reconcileStockoutCompanies(store.stockoutItems, store.rateItems);
+  store.stockoutWarnings = validateStockoutItems(store.stockoutItems, store.masterItems, store.rateItems);
   store.results = [];
   saveStore();
   render();
@@ -1341,6 +1509,8 @@ $("#importFile").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
   store = JSON.parse(await file.text());
+  store.stockoutItems = reconcileStockoutCompanies(store.stockoutItems || [], store.rateItems || []);
+  store.stockoutWarnings = validateStockoutItems(store.stockoutItems || [], store.masterItems || [], store.rateItems || []);
   saveStore();
   render();
 });
@@ -1352,5 +1522,7 @@ $("#clearHistoryButton").addEventListener("click", () => {
   render();
 });
 
+store.stockoutItems = reconcileStockoutCompanies(store.stockoutItems || [], store.rateItems || []);
+store.stockoutWarnings = validateStockoutItems(store.stockoutItems || [], store.masterItems || [], store.rateItems || []);
 render();
 showReleaseNoticeIfNeeded();
