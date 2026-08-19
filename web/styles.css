@@ -433,6 +433,16 @@ p {
   background: #fff7d6;
 }
 
+.warning-panel {
+  border-color: #f3c84b;
+  background: #fff9df;
+}
+
+.warning-panel ul {
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+
 .muted-badge {
   background: #eef1f4;
   color: var(--muted);

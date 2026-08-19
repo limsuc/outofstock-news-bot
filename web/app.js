@@ -277,6 +277,16 @@ function renderResults() {
   const template = $("#resultCardTemplate");
   grid.innerHTML = "";
   renderResultFilterButtons();
+  if (store.stockoutWarnings?.length) {
+    grid.insertAdjacentHTML(
+      "beforeend",
+      `<section class="panel warning-panel">
+        <h3>공지 리스트 확인 필요 ${store.stockoutWarnings.length}건</h3>
+        <p class="muted">매칭 결과는 출력했습니다. 아래 항목은 공지 리스트 탭에서 확인하거나 붙여넣기로 수정해 주세요.</p>
+        <ul>${store.stockoutWarnings.slice(0, 8).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+      </section>`,
+    );
+  }
   for (const result of store.results) {
     const filteredItems = filteredResultItems(result);
     if (!filteredItems.length) continue;
@@ -597,6 +607,10 @@ function parseManualStockouts(text) {
   );
 }
 
+function stockoutManualLine(item) {
+  return [itemCategory(item), item.company || "", item.productName || "", noticeDetail(item)].join(" | ");
+}
+
 function findMatches() {
   const stockoutIndex = store.stockoutItems.map((item) => ({
     item,
@@ -784,11 +798,6 @@ function runMatch() {
   }
   if (!store.stockoutItems.length) {
     alert("공지 PDF를 업로드하거나 공지 리스트를 입력해 주세요.");
-    return;
-  }
-  if (store.stockoutWarnings?.length) {
-    alert(`공지 리스트에 확인이 필요한 항목이 있어 매칭을 중단했습니다.\n공지 리스트 탭에서 추출 결과를 확인하거나 붙여넣기 입력으로 보정해 주세요.\n\n${store.stockoutWarnings.slice(0, 5).join("\n")}`);
-    switchView("stockout");
     return;
   }
 
@@ -1140,7 +1149,7 @@ function applyParsedStockouts(parsed) {
     ? `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel} · ${store.stockoutWarnings.length}건 확인 필요`
     : `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel}`;
   if (store.stockoutWarnings.length) {
-    alert(`PDF 표 구조가 바뀐 것 같아 매칭을 막았습니다.\n공지 리스트 탭에서 노란 행을 확인하거나 붙여넣기 입력으로 보정해 주세요.\n\n${store.stockoutWarnings.slice(0, 5).join("\n")}`);
+    alert(`PDF 추출 결과에 확인이 필요한 항목이 있습니다.\n매칭은 실행할 수 있고, 결과 화면에도 경고가 표시됩니다.\n필요하면 공지 리스트 탭에서 붙여넣기로 수정해 주세요.\n\n${store.stockoutWarnings.slice(0, 5).join("\n")}`);
   }
   render();
   switchView(store.stockoutWarnings.length ? "stockout" : "dashboard");
@@ -1227,6 +1236,12 @@ $("#manualStockoutButton").addEventListener("click", () => {
   saveStore();
   render();
   switchView("dashboard");
+});
+
+$("#editStockoutButton").addEventListener("click", () => {
+  if (!store.stockoutItems.length) return alert("수정할 공지 리스트가 없습니다.");
+  $("#manualStockoutText").value = store.stockoutItems.map(stockoutManualLine).join("\n");
+  $("#manualStockoutText").focus();
 });
 
 $("#clearStockoutButton").addEventListener("click", () => {
