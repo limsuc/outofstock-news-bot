@@ -55,7 +55,7 @@
                 <button class="primary-button" type="submit">마스터 반영</button>
               </form>
               <div class="step-helper">
-                <span>필수 컬럼: 사업자명, 병의원명, 제품명</span>
+                <span>필수 컬럼: 사업자명, 병의원명, 제품명 · 프로모션 매칭 권장 컬럼: 제약사명</span>
                 <button id="downloadTemplateButton" class="link-button" type="button">양식 CSV 다운로드</button>
               </div>
               <div id="masterUploadResult" class="result-box hidden"></div>
@@ -100,6 +100,7 @@
                 </label>
                 <button id="runMatchButton" class="primary-button large-action">매칭실행</button>
               </div>
+              <button id="loadPromotionSampleButton" class="secondary-button sample-button" type="button">프로모션 예시 데이터로 테스트</button>
               <p class="muted">용량 숫자가 있는 제품은 숫자와 단위가 맞을 때만 매칭합니다. 예: 클래리드정500mg ≠ 클래리드정250mg</p>
             </section>
 
@@ -258,16 +259,17 @@
         <div class="modal-heading">
           <div>
             <span class="badge">업데이트 안내</span>
-            <h2 id="releaseNoticeTitle">공지 PDF 매칭 오류를 수정했습니다</h2>
+            <h2 id="releaseNoticeTitle">프로모션 매칭과 PDF 오류 차단을 개선했습니다</h2>
           </div>
           <button id="releaseNoticeCloseIcon" class="icon-button" type="button" aria-label="공지 닫기">×</button>
         </div>
         <div class="modal-body">
-          <p>최근 공지 파일에서 발견된 매칭/추출 오류를 바로잡았습니다.</p>
+          <p>매일 바뀌는 공지 PDF에서도 잘못된 매칭이 나가지 않도록 보강했습니다.</p>
           <ul>
-            <li><b>베포엠10mg정</b>과 <b>베포엠서방정</b>처럼 서방/장용 제형이 다른 품목은 매칭하지 않습니다.</li>
-            <li>PDF에서 회사명이 제품 행 아래에 떨어져 있어도 가장 가까운 제약사명을 찾아 붙입니다.</li>
-            <li>프로모션 공지를 품절로 섞지 않고 별도 <b>프로모션</b> 구분으로 출력합니다.</li>
+            <li>프로모션은 사업자가 거래 중인 제약사가 하나라도 있으면 해당 제약사의 프로모션 전체를 공지합니다.</li>
+            <li>같은 제약사 프로모션은 한 번만 표시하고, 품목을 아래에 묶어서 출력합니다.</li>
+            <li>PDF 추출 결과에 제약사명, 품목명, 프로모션 내용 등이 비어 있으면 매칭을 막고 확인이 필요한 행을 표시합니다.</li>
+            <li>로컬에서 바로 확인할 수 있는 <b>프로모션 예시 데이터로 테스트</b> 버튼을 추가했습니다.</li>
           </ul>
         </div>
         <div class="modal-actions">

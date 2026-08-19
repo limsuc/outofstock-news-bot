@@ -278,6 +278,10 @@ p {
   min-height: 44px;
 }
 
+.sample-button {
+  margin-top: 10px;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -423,6 +427,10 @@ p {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.warning-row {
+  background: #fff7d6;
 }
 
 .muted-badge {

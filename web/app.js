@@ -18,6 +18,7 @@ function loadStore() {
   const fallback = {
     masterItems: [],
     stockoutItems: [],
+    stockoutWarnings: [],
     results: [],
     history: [],
   };
@@ -47,6 +48,14 @@ function escapeHtml(value) {
 
 function normalizeProduct(value) {
   return clean(value).normalize("NFKC").toUpperCase().replace(/[^0-9A-Z가-힣]/g, "");
+}
+
+function normalizeCompany(value) {
+  return clean(value)
+    .normalize("NFKC")
+    .toUpperCase()
+    .replace(/(?:주식회사|\(주\)|㈜|제약|약품|바이오|팜|PHARM|BIO|CO|LTD|INC)/g, "")
+    .replace(/[^0-9A-Z가-힣]/g, "");
 }
 
 function productStem(value) {
@@ -113,6 +122,28 @@ function itemDetail(item) {
   return item.expectedDate || "-";
 }
 
+function noticeDetail(item) {
+  if (itemCategory(item) === "프로모션") return item.note || item.expectedDate || "-";
+  return item.expectedDate || "-";
+}
+
+function validateStockoutItems(items) {
+  const warnings = [];
+  items.forEach((item, index) => {
+    const category = itemCategory(item);
+    const detail = noticeDetail(item);
+    const label = `${index + 1}. ${item.company || "제약사 없음"} / ${item.productName || "품목명 없음"}`;
+    if (!item.company) warnings.push(`${label}: 제약사명이 비어 있습니다.`);
+    if (!item.productName || /^(제품명|내용|공지사항|유통현황)$/.test(clean(item.productName))) {
+      warnings.push(`${label}: 품목명이 의심됩니다.`);
+    }
+    if (category === "프로모션" && (!detail || detail === "-")) warnings.push(`${label}: 프로모션 내용이 비어 있습니다.`);
+    if (category === "요율변경" && (!item.previousRate || !item.nextRate)) warnings.push(`${label}: 변경 전/후 요율이 비어 있습니다.`);
+    if (["품절", "정산중단"].includes(category) && (!detail || detail === "-")) warnings.push(`${label}: 기준일/예정일이 비어 있습니다.`);
+  });
+  return warnings;
+}
+
 function switchView(viewId) {
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
   document.querySelectorAll(".nav-button").forEach((button) => button.classList.remove("active"));
@@ -169,10 +200,11 @@ function updateWorkflowState() {
   const hasMaster = store.masterItems.length > 0;
   const hasStockout = store.stockoutItems.length > 0;
   const hasResults = store.results.length > 0;
+  const hasWarnings = store.stockoutWarnings?.length > 0;
 
   setStepState("stepMaster", "masterStatus", hasMaster ? `${store.masterItems.length}개 완료` : "대기");
-  setStepState("stepStockout", "stockoutStatus", hasStockout ? `${store.stockoutItems.length}개 완료` : "마스터 필요", !hasMaster);
-  setStepState("stepMatch", "matchStatus", hasResults ? "매칭 완료" : hasMaster && hasStockout ? "실행 가능" : "자료 필요", !(hasMaster && hasStockout));
+  setStepState("stepStockout", "stockoutStatus", hasWarnings ? `${store.stockoutWarnings.length}건 확인 필요` : hasStockout ? `${store.stockoutItems.length}개 완료` : "마스터 필요", !hasMaster);
+  setStepState("stepMatch", "matchStatus", hasWarnings ? "공지 확인 필요" : hasResults ? "매칭 완료" : hasMaster && hasStockout ? "실행 가능" : "자료 필요", !(hasMaster && hasStockout));
   setStepState("stepResult", "resultStatus", hasResults ? `${store.results.length}명 완료` : "대기", !hasResults);
 
   document.querySelectorAll("#stockoutPdfForm button, #stockoutPdfFormSecondary button").forEach((button) => {
@@ -216,18 +248,20 @@ function renderMasterTable() {
 }
 
 function renderStockoutTable() {
+  const warningIndexes = new Set((store.stockoutWarnings || []).map((warning) => Number(warning.split(".")[0]) - 1));
   $("#stockoutTable").innerHTML = store.stockoutItems.length
     ? store.stockoutItems
-        .map(
-          (item) => `
-            <tr>
+        .map((item, index) => {
+          const warning = warningIndexes.has(index);
+          return `
+            <tr class="${warning ? "warning-row" : ""}">
               <td><span class="category-badge">${escapeHtml(itemCategory(item))}</span></td>
               <td>${escapeHtml(item.company || "-")}</td>
               <td>${escapeHtml(item.productName)}</td>
               <td>${escapeHtml(itemDetail(item))}</td>
             </tr>
-          `,
-        )
+          `;
+        })
         .join("")
     : `<tr><td colspan="4">공지 PDF를 업로드하거나 붙여넣기로 입력해 주세요.</td></tr>`;
 }
@@ -321,6 +355,27 @@ function buildResultMessage(result, items = filteredResultItems(result)) {
   for (const category of categories) {
     const categoryItems = items.filter((item) => itemCategory(item) === category);
     lines.push(`[${category}]`);
+    if (category === "프로모션") {
+      const groups = new Map();
+      for (const item of categoryItems) {
+        const label = `${item.company || "해당 제약사"} 프로모션`;
+        const key = [item.company, label].map(clean).join("|");
+        if (!groups.has(key)) groups.set(key, { company: item.company, label, items: [] });
+        groups.get(key).items.push(item);
+      }
+      [...groups.values()].forEach((group, index) => {
+        lines.push(
+          `${circled[index] || `${index + 1}.`} ${group.label || `${group.company || "해당 제약사"} 프로모션`}`,
+          `- 제약사명: ${group.company || "-"}`,
+          "- 프로모션 품목:",
+        );
+        group.items.forEach((item, itemIndex) => {
+          lines.push(`  ${itemIndex + 1}. ${item.productName} - ${noticeDetail(item)}`);
+        });
+        lines.push("");
+      });
+      continue;
+    }
     categoryItems.forEach((item, index) => {
       lines.push(
         `${circled[index] || `${index + 1}.`} ${item.hospitalName}`,
@@ -330,7 +385,7 @@ function buildResultMessage(result, items = filteredResultItems(result)) {
       if (category === "요율변경") {
         lines.push(`- 변경요율: ${item.previousRate || "-"} → ${item.nextRate || "-"}`);
       }
-      lines.push(`- ${categoryDetailLabel(category)}: ${item.expectedDate || "-"}`);
+      lines.push(`- ${categoryDetailLabel(category)}: ${noticeDetail(item)}`);
       if (item.note && item.note !== item.expectedDate) lines.push(`- 비고: ${item.note}`);
       lines.push("");
     });
@@ -455,6 +510,7 @@ async function parseMasterFile(file) {
       partnerName,
       hospitalName,
       productName,
+      company: getCell(row, headers, ["제약사명", "제약사", "회사명", "업체명", "메이커", "제조사"]),
       phone: getCell(row, headers, ["연락처", "핸드폰", "휴대폰", "전화번호"]),
       contactName: getCell(row, headers, ["담당자명", "담당자"]),
       memo: getCell(row, headers, ["메모", "비고"]),
@@ -497,7 +553,23 @@ function dedupeStockouts(items) {
   const map = new Map();
   for (const item of items) {
     const key = `${itemCategory(item)}|${normalizeProduct(item.productName)}`;
-    if (key && !map.has(key)) map.set(key, item);
+    if (!key || !item.productName) continue;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, item);
+      continue;
+    }
+
+    const merged = {
+      ...existing,
+      company: existing.company || item.company || "",
+      expectedDate: noticeDetail(existing) === "-" ? noticeDetail(item) : existing.expectedDate,
+      note: existing.note || item.note || "",
+      previousRate: existing.previousRate || item.previousRate || "",
+      nextRate: existing.nextRate || item.nextRate || "",
+    };
+    if (itemCategory(item) === "프로모션") merged.expectedDate = merged.note || item.note || item.expectedDate || merged.expectedDate || "-";
+    map.set(key, merged);
   }
   return [...map.values()];
 }
@@ -530,8 +602,64 @@ function findMatches() {
     item,
     full: normalizeProduct(item.productName),
     stem: productStem(item.productName),
+    company: normalizeCompany(item.company),
   }));
+  const promotionItems = stockoutIndex.filter((stockout) => itemCategory(stockout.item) === "프로모션" && stockout.company.length >= 2);
   const matches = [];
+  const masterByPartner = new Map();
+
+  for (const master of store.masterItems) {
+    if (!masterByPartner.has(master.partnerName)) masterByPartner.set(master.partnerName, []);
+    masterByPartner.get(master.partnerName).push(master);
+  }
+
+  for (const [partnerName, masters] of masterByPartner) {
+    const partnerCompanies = new Map();
+    for (const master of masters) {
+      const company = normalizeCompany(master.company);
+      if (company.length >= 2 && !partnerCompanies.has(company)) partnerCompanies.set(company, master);
+    }
+
+    for (const stockout of promotionItems) {
+      const matchedCompany = [...partnerCompanies.keys()].find(
+        (company) => stockout.company.includes(company) || company.includes(stockout.company),
+      );
+      if (!matchedCompany) continue;
+      matches.push({
+        master: partnerCompanies.get(matchedCompany) || masters[0],
+        stockout: stockout.item,
+        matchType: "제약사 기준",
+        hospitalNames: [],
+      });
+    }
+
+    if (partnerCompanies.size) continue;
+
+    const seenProductPromoKeys = new Set();
+    for (const master of masters) {
+      const full = normalizeProduct(master.productName);
+      const stem = productStem(master.productName);
+      if (full.length < 4 && stem.length < 4) continue;
+
+      for (const stockout of promotionItems) {
+        let matchType = "";
+        if (full.length >= 4 && stockout.full.includes(full)) matchType = "정확/포함";
+        else if (
+          stem.length >= 4 &&
+          stockout.stem.includes(stem) &&
+          formulationCompatible(master.productName, stockout.item.productName) &&
+          strengthsCompatible(master.productName, stockout.item.productName)
+        ) {
+          matchType = extractStrengthTokens(master.productName).length ? "제품명+용량 기준" : "제품명 기준";
+        }
+        if (!matchType) continue;
+        const key = [partnerName, stockout.item.company, stockout.item.productName].map(clean).join("|");
+        if (seenProductPromoKeys.has(key)) continue;
+        seenProductPromoKeys.add(key);
+        matches.push({ master, stockout: stockout.item, matchType, hospitalNames: [master.hospitalName] });
+      }
+    }
+  }
 
   for (const master of store.masterItems) {
     const full = normalizeProduct(master.productName);
@@ -540,6 +668,8 @@ function findMatches() {
 
     for (const stockout of stockoutIndex) {
       let matchType = "";
+      const category = itemCategory(stockout.item);
+      if (category === "프로모션") continue;
       if (full.length >= 4 && stockout.full.includes(full)) matchType = "정확/포함";
       else if (
         stem.length >= 4 &&
@@ -550,11 +680,24 @@ function findMatches() {
         matchType = extractStrengthTokens(master.productName).length ? "제품명+용량 기준" : "제품명 기준";
       }
       if (!matchType) continue;
-      matches.push({ master, stockout: stockout.item, matchType });
+      matches.push({ master, stockout: stockout.item, matchType, hospitalNames: [master.hospitalName] });
       break;
     }
   }
   return matches;
+}
+
+function matchHospitalLabel(match) {
+  const names = unique(match.hospitalNames || [match.master.hospitalName]);
+  if (names.length <= 1) return names[0] || match.master.hospitalName;
+  return `${names[0]} 외 ${names.length - 1}곳`;
+}
+
+function matchDisplayLabel(match) {
+  if (itemCategory(match.stockout) === "프로모션") {
+    return `${match.stockout.company || "해당 제약사"} 프로모션`;
+  }
+  return matchHospitalLabel(match);
 }
 
 function buildMessage(date, partnerName, phone, matches) {
@@ -580,16 +723,38 @@ function buildMessage(date, partnerName, phone, matches) {
     const categoryMatches = matches.filter((match) => itemCategory(match.stockout) === category);
     if (!categoryMatches.length) continue;
     lines.push(`[${category}]`);
+    if (category === "프로모션") {
+      const groups = new Map();
+      for (const match of categoryMatches) {
+        const label = matchDisplayLabel(match);
+        const company = match.stockout.company || "";
+        const key = [company, label].map(clean).join("|");
+        if (!groups.has(key)) groups.set(key, { company, label, matches: [] });
+        groups.get(key).matches.push(match);
+      }
+      [...groups.values()].forEach((group, index) => {
+        lines.push(
+          `${circled[index] || `${index + 1}.`} ${group.label || `${group.company || "해당 제약사"} 프로모션`}`,
+          `- 제약사명: ${group.company || "-"}`,
+          "- 프로모션 품목:",
+        );
+        group.matches.forEach((match, matchIndex) => {
+          lines.push(`  ${matchIndex + 1}. ${match.stockout.productName} - ${noticeDetail(match.stockout)}`);
+        });
+        lines.push("");
+      });
+      continue;
+    }
     categoryMatches.forEach((match, index) => {
       lines.push(
-        `${circled[index] || `${index + 1}.`} ${match.master.hospitalName}`,
+        `${circled[index] || `${index + 1}.`} ${matchDisplayLabel(match)}`,
         `- 제약사명: ${match.stockout.company || "-"}`,
         `- 품목명: ${match.stockout.productName}`,
       );
       if (category === "요율변경") {
         lines.push(`- 변경요율: ${match.stockout.previousRate || "-"} → ${match.stockout.nextRate || "-"}`);
       }
-      lines.push(`- ${categoryDetailLabel(category)}: ${match.stockout.expectedDate || "-"}`);
+      lines.push(`- ${categoryDetailLabel(category)}: ${noticeDetail(match.stockout)}`);
       if (match.stockout.note && match.stockout.note !== match.stockout.expectedDate) lines.push(`- 비고: ${match.stockout.note}`);
       lines.push("");
     });
@@ -621,6 +786,11 @@ function runMatch() {
     alert("공지 PDF를 업로드하거나 공지 리스트를 입력해 주세요.");
     return;
   }
+  if (store.stockoutWarnings?.length) {
+    alert(`공지 리스트에 확인이 필요한 항목이 있어 매칭을 중단했습니다.\n공지 리스트 탭에서 추출 결과를 확인하거나 붙여넣기 입력으로 보정해 주세요.\n\n${store.stockoutWarnings.slice(0, 5).join("\n")}`);
+    switchView("stockout");
+    return;
+  }
 
   const date = $("#matchDate").value || today();
   const matches = findMatches();
@@ -647,7 +817,7 @@ function runMatch() {
       status: "ready",
       createdAt: new Date().toISOString(),
       items: group.matches.map((match) => ({
-        hospitalName: match.master.hospitalName,
+        hospitalName: matchDisplayLabel(match),
         company: match.stockout.company || "",
         productName: match.stockout.productName,
         registeredProductName: match.master.productName,
@@ -666,6 +836,77 @@ function runMatch() {
   saveStore();
   render();
   switchView("results");
+}
+
+function loadPromotionSampleData() {
+  const hasData = store.masterItems.length || store.stockoutItems.length || store.results.length;
+  if (hasData && !confirm("현재 로컬 데이터를 예시 데이터로 바꿔서 테스트할까요? 필요하면 먼저 백업 다운로드를 해주세요.")) return;
+
+  store.masterItems = [
+    {
+      id: id(),
+      partnerName: "서원테스트약국",
+      phone: "010-0000-0000",
+      contactName: "테스트대표",
+      hospitalName: "일산마두정형외과",
+      productName: "기존처방품목A",
+      company: "테라젠이텍스",
+      memo: "제약사 기준 프로모션 확인",
+    },
+    {
+      id: id(),
+      partnerName: "서원테스트약국",
+      phone: "010-0000-0000",
+      contactName: "테스트대표",
+      hospitalName: "편한허리신경외과의원",
+      productName: "기존처방품목B",
+      company: "테라젠이텍스",
+      memo: "병의원 관계없이 사업자 제약사 기준 공지",
+    },
+    {
+      id: id(),
+      partnerName: "기존방식테스트",
+      phone: "010-1111-1111",
+      contactName: "테스트담당",
+      hospitalName: "제품명매칭의원",
+      productName: "아클펜정",
+      company: "",
+      memo: "제약사명 없는 기존 마스터",
+    },
+  ];
+  store.stockoutItems = [
+    {
+      id: id(),
+      category: "프로모션",
+      company: "테라젠이텍스",
+      productName: "아클펜정",
+      expectedDate: "신규 병의원 대상 처방 시 프로모션 적용",
+      note: "신규 병의원 대상 처방 시 프로모션 적용",
+    },
+    {
+      id: id(),
+      category: "프로모션",
+      company: "테라젠이텍스",
+      productName: "넥스온정 20mg, 40mg",
+      expectedDate: "월 매출 기준 프로모션 적용",
+      note: "월 매출 기준 프로모션 적용",
+    },
+    {
+      id: id(),
+      category: "품절",
+      company: "테라젠이텍스",
+      productName: "아클펜정",
+      expectedDate: "미정",
+      note: "",
+    },
+  ];
+  store.results = [];
+  store.history = [];
+  resultCategoryFilter = "프로모션";
+  saveStore();
+  render();
+  runMatch();
+  alert("프로모션 예시 데이터를 넣고 매칭을 실행했습니다. 프로모션만 결과를 확인해 주세요.");
 }
 
 function printText(title, text) {
@@ -824,7 +1065,7 @@ async function copyResultImage(result) {
 }
 
 function downloadTemplate() {
-  const csv = "\ufeff사업자명,연락처,담당자명,병의원명,제품명,메모\n에스팜,010-0000-0000,김대표,수이비인후과,브로나제장용정,\n에스팜,010-0000-0000,김대표,박영준내과,페북트정40mg,\n";
+  const csv = "\ufeff사업자명,연락처,담당자명,병의원명,제품명,제약사명,메모\n에스팜,010-0000-0000,김대표,수이비인후과,브로나제장용정,마더스제약,\n에스팜,010-0000-0000,김대표,박영준내과,페북트정40mg,경보제약,\n";
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -891,12 +1132,18 @@ async function handlePdfUpload(input) {
 
 function applyParsedStockouts(parsed) {
   store.stockoutItems = parsed.items;
+  store.stockoutWarnings = validateStockoutItems(parsed.items);
   store.results = [];
   saveStore();
   $("#stockoutUploadResult").classList.remove("hidden");
-  $("#stockoutUploadResult").textContent = `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel}`;
+  $("#stockoutUploadResult").textContent = store.stockoutWarnings.length
+    ? `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel} · ${store.stockoutWarnings.length}건 확인 필요`
+    : `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel}`;
+  if (store.stockoutWarnings.length) {
+    alert(`PDF 표 구조가 바뀐 것 같아 매칭을 막았습니다.\n공지 리스트 탭에서 노란 행을 확인하거나 붙여넣기 입력으로 보정해 주세요.\n\n${store.stockoutWarnings.slice(0, 5).join("\n")}`);
+  }
   render();
-  switchView("dashboard");
+  switchView(store.stockoutWarnings.length ? "stockout" : "dashboard");
 }
 
 async function loadStockoutPdfFromDrive(button) {
@@ -969,10 +1216,13 @@ $("#stockoutDriveButtonSecondary").addEventListener("click", (event) => {
   loadStockoutPdfFromDrive(event.currentTarget);
 });
 
+$("#loadPromotionSampleButton").addEventListener("click", loadPromotionSampleData);
+
 $("#manualStockoutButton").addEventListener("click", () => {
   const items = parseManualStockouts($("#manualStockoutText").value);
   if (!items.length) return alert("공지 품목을 입력해 주세요.");
   store.stockoutItems = items;
+  store.stockoutWarnings = [];
   store.results = [];
   saveStore();
   render();
@@ -982,6 +1232,7 @@ $("#manualStockoutButton").addEventListener("click", () => {
 $("#clearStockoutButton").addEventListener("click", () => {
   if (!confirm("현재 공지 리스트를 비울까요?")) return;
   store.stockoutItems = [];
+  store.stockoutWarnings = [];
   store.results = [];
   saveStore();
   render();

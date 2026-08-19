@@ -72,11 +72,38 @@
   }
 
   function promotionRow(row) {
+    const note = columnText(row, 260);
+    const productName = columnText(row, 75, note ? 260 : 420);
     return {
       company: columnText(row, 0, 75),
-      productName: columnText(row, 75, 260),
-      note: columnText(row, 260),
+      productName,
+      note,
     };
+  }
+
+  function appendPromotionNotes(items, rows) {
+    let lastPromotion = null;
+
+    for (const row of rows) {
+      const parsed = promotionRow(row);
+      const combined = row.map((item) => item.text).join(" ");
+      if (isNoticeHeader(combined)) continue;
+
+      const hasProduct = Boolean(parsed.productName);
+      const hasCompany = Boolean(parsed.company);
+      const hasNote = Boolean(parsed.note);
+
+      if (hasProduct && (hasCompany || hasNote)) {
+        lastPromotion = items.find(
+          (item) => item.category === "프로모션" && item.productName === parsed.productName && item.company === (parsed.company || item.company),
+        );
+        continue;
+      }
+
+      if (!lastPromotion || !combined || hasCompany || hasProduct) continue;
+      lastPromotion.note = cleanText([lastPromotion.note, combined].filter(Boolean).join(" "));
+      lastPromotion.expectedDate = lastPromotion.note || "-";
+    }
   }
 
   function pageCategory(rows) {
@@ -176,6 +203,8 @@
               };
         pageItems.push({ ...item, y: row[0]?.y ?? 0 });
       }
+
+      if (category === "프로모션") appendPromotionNotes(pageItems, rows);
 
       for (const item of pageItems) {
         if (!item.company && companyMarkers.length) {
