@@ -282,7 +282,7 @@ function renderResults() {
       "beforeend",
       `<section class="panel warning-panel">
         <h3>공지 리스트 확인 필요 ${store.stockoutWarnings.length}건</h3>
-        <p class="muted">매칭 결과는 출력했습니다. 아래 항목은 공지 리스트 탭에서 확인하거나 붙여넣기로 수정해 주세요.</p>
+        <p class="muted">매칭 결과는 출력했습니다. 아래 항목만 확인해 주세요.</p>
         <ul>${store.stockoutWarnings.slice(0, 8).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
       </section>`,
     );
@@ -605,10 +605,6 @@ function parseManualStockouts(text) {
       })
       .filter((item) => item.productName),
   );
-}
-
-function stockoutManualLine(item) {
-  return [itemCategory(item), item.company || "", item.productName || "", noticeDetail(item)].join(" | ");
 }
 
 function findMatches() {
@@ -1149,10 +1145,10 @@ function applyParsedStockouts(parsed) {
     ? `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel} · ${store.stockoutWarnings.length}건 확인 필요`
     : `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel}`;
   if (store.stockoutWarnings.length) {
-    alert(`PDF 추출 결과에 확인이 필요한 항목이 있습니다.\n매칭은 실행할 수 있고, 결과 화면에도 경고가 표시됩니다.\n필요하면 공지 리스트 탭에서 붙여넣기로 수정해 주세요.\n\n${store.stockoutWarnings.slice(0, 5).join("\n")}`);
+    alert(`PDF 추출 결과에 확인이 필요한 항목이 있습니다.\n확인을 눌러도 오류 내용은 매칭결과에서 확인할 수 있습니다.\n\n${store.stockoutWarnings.slice(0, 5).join("\n")}`);
   }
   render();
-  switchView(store.stockoutWarnings.length ? "stockout" : "dashboard");
+  switchView("dashboard");
 }
 
 async function loadStockoutPdfFromDrive(button) {
@@ -1236,12 +1232,6 @@ $("#manualStockoutButton").addEventListener("click", () => {
   saveStore();
   render();
   switchView("dashboard");
-});
-
-$("#editStockoutButton").addEventListener("click", () => {
-  if (!store.stockoutItems.length) return alert("수정할 공지 리스트가 없습니다.");
-  $("#manualStockoutText").value = store.stockoutItems.map(stockoutManualLine).join("\n");
-  $("#manualStockoutText").focus();
 });
 
 $("#clearStockoutButton").addEventListener("click", () => {
