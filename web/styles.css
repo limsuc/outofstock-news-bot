@@ -443,6 +443,16 @@ p {
   padding-left: 20px;
 }
 
+.warning-group {
+  margin-top: 14px;
+}
+
+.warning-group h4 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 14px;
+}
+
 .muted-badge {
   background: #eef1f4;
   color: var(--muted);

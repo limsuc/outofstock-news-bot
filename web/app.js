@@ -211,6 +211,29 @@ function validateStockoutItems(items, masterItems = store.masterItems || [], rat
   return warnings;
 }
 
+function warningGroups(warnings = store.stockoutWarnings || [], items = store.stockoutItems || []) {
+  return warnings.reduce(
+    (groups, warning) => {
+      const index = Number(String(warning).split(".")[0]) - 1;
+      const category = itemCategory(items[index] || {});
+      if (category === "프로모션") groups.promotion.push(warning);
+      else groups.stockout.push(warning);
+      return groups;
+    },
+    { stockout: [], promotion: [] },
+  );
+}
+
+function warningSummaryText() {
+  const groups = warningGroups();
+  return [
+    groups.stockout.length ? `품절품목 오류 ${groups.stockout.length}건` : "",
+    groups.promotion.length ? `프로모션 오류 ${groups.promotion.length}건` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function switchView(viewId) {
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
   document.querySelectorAll(".nav-button").forEach((button) => button.classList.remove("active"));
@@ -268,9 +291,10 @@ function updateWorkflowState() {
   const hasStockout = store.stockoutItems.length > 0;
   const hasResults = store.results.length > 0;
   const hasWarnings = store.stockoutWarnings?.length > 0;
+  const warningText = warningSummaryText();
 
   setStepState("stepMaster", "masterStatus", hasMaster ? `${store.masterItems.length}개 완료` : "대기");
-  setStepState("stepStockout", "stockoutStatus", hasWarnings ? `${store.stockoutWarnings.length}건 확인 필요` : hasStockout ? `${store.stockoutItems.length}개 완료` : "마스터 필요", !hasMaster);
+  setStepState("stepStockout", "stockoutStatus", hasWarnings ? warningText : hasStockout ? `${store.stockoutItems.length}개 완료` : "마스터 필요", !hasMaster);
   setStepState("stepMatch", "matchStatus", hasWarnings ? "공지 확인 필요" : hasResults ? "매칭 완료" : hasMaster && hasStockout ? "실행 가능" : "자료 필요", !(hasMaster && hasStockout));
   setStepState("stepResult", "resultStatus", hasResults ? `${store.results.length}명 완료` : "대기", !hasResults);
 
@@ -345,12 +369,21 @@ function renderResults() {
   grid.innerHTML = "";
   renderResultFilterButtons();
   if (store.stockoutWarnings?.length) {
+    const groups = warningGroups();
+    const warningSection = (title, warnings) =>
+      warnings.length
+        ? `<div class="warning-group">
+            <h4>${title} ${warnings.length}건</h4>
+            <ul>${warnings.slice(0, 8).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+          </div>`
+        : "";
     grid.insertAdjacentHTML(
       "beforeend",
       `<section class="panel warning-panel">
-        <h3>공지 리스트 확인 필요 ${store.stockoutWarnings.length}건</h3>
+        <h3>공지 리스트 확인 필요</h3>
         <p class="muted">매칭 결과는 출력했습니다. 아래 항목만 확인해 주세요.</p>
-        <ul>${store.stockoutWarnings.slice(0, 8).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+        ${warningSection("품절품목 오류", groups.stockout)}
+        ${warningSection("프로모션 오류", groups.promotion)}
       </section>`,
     );
   }
@@ -1309,10 +1342,15 @@ function applyParsedStockouts(parsed) {
   saveStore();
   $("#stockoutUploadResult").classList.remove("hidden");
   $("#stockoutUploadResult").textContent = store.stockoutWarnings.length
-    ? `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel} · ${store.stockoutWarnings.length}건 확인 필요`
+    ? `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel} · ${warningSummaryText()}`
     : `공지 리스트 추출 완료: ${store.stockoutItems.length}개 · ${parsed.layoutLabel}`;
   if (store.stockoutWarnings.length) {
-    alert(`PDF 추출 결과에 확인이 필요한 항목이 있습니다.\n확인을 눌러도 오류 내용은 매칭결과에서 확인할 수 있습니다.\n\n${store.stockoutWarnings.slice(0, 5).join("\n")}`);
+    const groups = warningGroups();
+    const lines = [
+      groups.stockout.length ? `[품절품목 오류]\n${groups.stockout.slice(0, 5).join("\n")}` : "",
+      groups.promotion.length ? `[프로모션 오류]\n${groups.promotion.slice(0, 5).join("\n")}` : "",
+    ].filter(Boolean);
+    alert(`PDF 추출 결과에 확인이 필요한 항목이 있습니다.\n확인을 눌러도 오류 내용은 매칭결과에서 확인할 수 있습니다.\n\n${lines.join("\n\n")}`);
   }
   render();
   switchView("dashboard");
